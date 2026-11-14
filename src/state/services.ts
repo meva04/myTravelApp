@@ -6,7 +6,14 @@ import { makeRepo, type Repo } from '@/db/repo';
 import { makePlaces, type Places } from '@/google/places';
 import { makeRoutes, type Routes } from '@/google/routes';
 
-export type Services = { repo: Repo; places: Places; routes: Routes; newId: () => string };
+export type Services = {
+  repo: Repo;
+  places: Places;
+  routes: Routes;
+  newId: () => string;
+  /** 일정이나 도착 상태가 바뀌었을 때 (도착 감지 대상을 다시 등록) */
+  onItineraryChanged: () => void;
+};
 
 let ready: Promise<Services> | null = null;
 
@@ -15,7 +22,7 @@ export function getServices(): Promise<Services> {
     const repo = makeRepo(await openExpoDb(), randomUUID);
     await repo.migrate();
     const key = process.env.EXPO_PUBLIC_GOOGLE_API_KEY ?? '';
-    return { repo, places: makePlaces(fetch, key), routes: makeRoutes(fetch, key, randomUUID), newId: randomUUID };
+    return { repo, places: makePlaces(fetch, key), routes: makeRoutes(fetch, key, randomUUID), newId: randomUUID, onItineraryChanged: () => {} };
   })();
   return ready;
 }
