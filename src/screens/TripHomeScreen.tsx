@@ -3,12 +3,12 @@ import { Alert, ScrollView, View } from 'react-native';
 import Sortable from 'react-native-sortables';
 
 import { summarizeExpenses } from '@/domain/expenses';
-import { moveToDay, reorder, syncLegs } from '@/domain/itinerary';
+import { moveToDay, removeStop, reorder, syncLegs } from '@/domain/itinerary';
 import type { Day, Leg, Stop } from '@/domain/types';
 import { t } from '@/i18n/ko';
 import { useLoad, useServices } from '@/state/ServicesContext';
 import { space } from '@/theme/tokens';
-import { formatKm, formatMoney, formatTime } from '@/ui/format';
+import { formatAmounts, formatKm, formatMoney, formatTime } from '@/ui/format';
 import { Button, Card, Chip, Row, Screen, Txt } from '@/ui/kit';
 
 type Props = {
@@ -20,9 +20,11 @@ type Props = {
   onSettings: () => void;
   /** 화면에 다시 돌아왔을 때 바뀌는 값. 바뀌면 다시 불러온다. */
   refreshKey?: number;
+  /** 오늘 날짜 'YYYY-MM-DD'. 여행 중이면 그날 탭으로 연다. */
+  today?: string;
 };
 
-export function TripHomeScreen({ tripId, onAddStop, onOpenMap, onOpenStop, onExpenses, onSettings, refreshKey = 0 }: Props) {
+export function TripHomeScreen({ tripId, onAddStop, onOpenMap, onOpenStop, onExpenses, onSettings, refreshKey = 0, today }: Props) {
   const sv = useServices();
   const { repo } = sv;
   const { data: trip } = useLoad(() => repo.getTrip(tripId), [tripId, refreshKey]);
@@ -33,15 +35,17 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenMap, onOpenStop, onExp
   const day = days?.find((d) => d.id === dayId);
 
   useEffect(() => {
-    if (!dayId && days?.length) setDayId(days[0].id);
-  }, [days, dayId]);
+    if (!dayId && days?.length) setDayId((days.find((d) => d.date === today) ?? days[0]).id);
+  }, [days, dayId, today]);
 
   const { data: dayData, reload } = useLoad(
-    async () => (dayId ? { stops: await repo.listStops(dayId), legs: await repo.listLegs(dayId) } : undefined),
+    async () => (dayId ? { dayId, stops: await repo.listStops(dayId), legs: await repo.listLegs(dayId) } : undefined),
     [dayId, refreshKey],
   );
-  const stops = dayData?.stops ?? [];
-  const legs = dayData?.legs ?? [];
+  // 탭을 바꾼 직후에는 이전 날의 목록이 남아 있으므로 쓰지 않는다 (다른 날에 잘못 저장되는 것 방지).
+  const current = dayData?.dayId === dayId ? dayData : undefined;
+  const stops = current?.stops ?? [];
+  const legs = current?.legs ?? [];
 
   const saveDay = async (id: string, next: Stop[]) => {
     await repo.saveStops(id, next);
@@ -53,7 +57,7 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenMap, onOpenStop, onExp
   };
 
   const onDragEnd = async (from: number, to: number) => {
-    if (!day || from === to) return;
+    if (!day || !current || from === to) return;
     await saveDay(day.id, reorder(stops, from, to));
     changed();
   };
@@ -64,26 +68,29 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenMap, onOpenStop, onExp
         text: t('common.delete'),
         style: 'destructive',
         onPress: async () => {
-          if (!day) return;
-          await saveDay(day.id, reorder(stops.filter((s) => s.id !== stop.id), 0, 0));
+          if (!day || !current) return;
+          await saveDay(day.id, removeStop(stops, stop.id));
           changed();
         },
       },
     ]);
   };
   const moveTo = async (target: Day) => {
-    if (!day || !moving) return;
+    if (!day || !moving || !current) return;
     // 옮기는 방문지를 먼저 대상 날에 저장해야 사진·비용이 따라간다.
     const r = moveToDay(moving, stops, await repo.listStops(target.id), target.id);
     await saveDay(target.id, r.to);
     await saveDay(day.id, r.from);
+    await repo.setExpenseDateForStop(moving.id, target.date);
     setMoving(null);
     changed();
   };
 
   if (!trip || !days) return <Screen>{null}</Screen>;
 
-  const spent = expenses && day ? (summarizeExpenses(expenses, trip).byDate[day.date] ?? 0) : 0;
+  const summary = expenses ? summarizeExpenses(expenses, trip) : undefined;
+  const spent = summary && day ? (summary.byDate[day.date] ?? 0) : 0;
+  const unconverted = summary && day ? formatAmounts(summary.unconvertedByDate[day.date]) : '';
   const meters = legs.reduce((sum, l) => sum + (selected(l)?.distanceMeters ?? 0), 0);
 
   return (
@@ -105,6 +112,7 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenMap, onOpenStop, onExp
           <Txt kind="soft">
             {t('day.summary', { stops: stops.length, km: formatKm(meters), spent: formatMoney(spent, trip.baseCurrency) })}
           </Txt>
+          {unconverted !== '' && <Txt kind="soft">{`${t('expense.unconverted')}: ${unconverted}`}</Txt>}
           {stops.length === 0 ? (
             <Card>
               <Txt kind="soft">{t('day.empty')}</Txt>

@@ -3,6 +3,7 @@ import * as Location from 'expo-location';
 import * as Notifications from 'expo-notifications';
 import * as TaskManager from 'expo-task-manager';
 
+import { emitDataChanged } from '@/state/events';
 import { getServices } from '@/state/services';
 
 import { handleEnter, refreshGeofences as refreshCore, type GeofenceDeps } from './geofenceCore';
@@ -50,6 +51,11 @@ export async function refreshGeofences(): Promise<void> {
   }
 }
 
+// 앱을 보고 있는 중에 도착해도 알림 배너가 보이도록.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
+});
+
 type GeofenceEvent = { eventType: Location.LocationGeofencingEventType; region: Location.LocationRegion };
 
 TaskManager.defineTask<GeofenceEvent>(GEOFENCE_TASK, async ({ data, error }) => {
@@ -57,4 +63,5 @@ TaskManager.defineTask<GeofenceEvent>(GEOFENCE_TASK, async ({ data, error }) => 
   if (data.eventType !== Location.LocationGeofencingEventType.Enter) return;
   if (!data.region.identifier) return;
   await handleEnter(await deps(), data.region.identifier);
+  emitDataChanged(); // 열려 있는 화면이 있으면 스탬프를 바로 보여준다
 });

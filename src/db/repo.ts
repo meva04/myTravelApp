@@ -26,6 +26,24 @@ export function makeRepo(db: Db, newId: () => Id) {
     s.id, s.dayId, s.order, s.placeId, s.name, s.lat, s.lng, s.plannedTime, s.arrivedAt, s.arrivalMethod, s.memo,
   ];
 
+  // 쓰기 작업을 한 번에 하나씩, 트랜잭션으로 실행한다 (동시에 저장해도 섞이지 않게).
+  let queue: Promise<unknown> = Promise.resolve();
+  function write<T>(fn: () => Promise<T>): Promise<T> {
+    const run = queue.then(async () => {
+      await db.run('BEGIN');
+      try {
+        const result = await fn();
+        await db.run('COMMIT');
+        return result;
+      } catch (e) {
+        await db.run('ROLLBACK');
+        throw e;
+      }
+    });
+    queue = run.catch(() => {});
+    return run;
+  }
+
   return {
     async migrate(): Promise<void> {
       await db.run('PRAGMA foreign_keys = ON');
@@ -75,28 +93,42 @@ export function makeRepo(db: Db, newId: () => Id) {
     async getStop(id: Id): Promise<Stop | null> {
       return (await db.all<Stop>(`SELECT ${stopCols} FROM stop WHERE id = ?`, [id]))[0] ?? null;
     },
-    /** 그 날의 방문지를 통째로 교체한다. 남는 방문지의 사진·비용은 유지된다. */
-    async saveStops(dayId: Id, stops: Stop[]): Promise<void> {
-      const keep = new Set(stops.map((s) => s.id));
-      const existing = await db.all<{ id: Id }>('SELECT id FROM stop WHERE dayId = ?', [dayId]);
-      for (const { id } of existing) if (!keep.has(id)) await db.run('DELETE FROM stop WHERE id = ?', [id]);
-      for (const s of stops) {
-        await db.run(
-          `INSERT INTO stop (${stopCols}) VALUES (?,?,?,?,?,?,?,?,?,?,?)
-           ON CONFLICT(id) DO UPDATE SET dayId=excluded.dayId, "order"=excluded."order",
-             placeId=excluded.placeId, name=excluded.name, lat=excluded.lat, lng=excluded.lng,
-             plannedTime=excluded.plannedTime, arrivedAt=excluded.arrivedAt,
-             arrivalMethod=excluded.arrivalMethod, memo=excluded.memo`,
-          stopParams({ ...s, dayId }),
-        );
-      }
+    /**
+     * 그 날의 방문지 구성을 저장한다: 목록에 없는 방문지는 지우고, 새 방문지는 추가하고,
+     * 이미 있는 방문지는 날짜와 순서만 바꾼다. 도착 기록·메모 등은 화면의 옛 사본으로 덮어쓰지 않는다.
+     */
+    saveStops(dayId: Id, stops: Stop[]): Promise<void> {
+      return write(async () => {
+        const keep = new Set(stops.map((s) => s.id));
+        const existing = await db.all<{ id: Id }>('SELECT id FROM stop WHERE dayId = ?', [dayId]);
+        for (const { id } of existing) if (!keep.has(id)) await db.run('DELETE FROM stop WHERE id = ?', [id]);
+        for (const s of stops) {
+          await db.run(
+            `INSERT INTO stop (${stopCols}) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+             ON CONFLICT(id) DO UPDATE SET dayId=excluded.dayId, "order"=excluded."order"`,
+            stopParams({ ...s, dayId }),
+          );
+        }
+      });
     },
-    async updateStop(s: Stop): Promise<void> {
-      await db.run(
-        `UPDATE stop SET dayId=?, "order"=?, placeId=?, name=?, lat=?, lng=?, plannedTime=?,
-           arrivedAt=?, arrivalMethod=?, memo=? WHERE id=?`,
-        [...stopParams(s).slice(1), s.id],
-      );
+    /** 첫 도착만 기록한다. 기록했으면 true. */
+    markStopArrived(id: Id, at: string, method: 'auto' | 'manual'): Promise<boolean> {
+      return write(async () => {
+        const rows = await db.all<{ arrivedAt: string | null }>('SELECT arrivedAt FROM stop WHERE id = ?', [id]);
+        if (rows.length === 0 || rows[0].arrivedAt !== null) return false;
+        await db.run('UPDATE stop SET arrivedAt=?, arrivalMethod=? WHERE id=? AND arrivedAt IS NULL', [at, method, id]);
+        return true;
+      });
+    },
+    /** 이미 도착한 방문지의 시간을 고친다. */
+    async setStopArrivalTime(id: Id, at: string): Promise<void> {
+      await db.run("UPDATE stop SET arrivedAt=?, arrivalMethod='manual' WHERE id=? AND arrivedAt IS NOT NULL", [at, id]);
+    },
+    async setStopMemo(id: Id, memo: string): Promise<void> {
+      await db.run('UPDATE stop SET memo=? WHERE id=?', [memo, id]);
+    },
+    async setStopPlannedTime(id: Id, plannedTime: string | null): Promise<void> {
+      await db.run('UPDATE stop SET plannedTime=? WHERE id=?', [plannedTime, id]);
     },
 
     async listLegs(dayId: Id): Promise<Leg[]> {
@@ -106,15 +138,17 @@ export function makeRepo(db: Db, newId: () => Id) {
       );
       return rows.map((r) => ({ ...r, options: JSON.parse(r.options) }));
     },
-    async saveLegs(dayId: Id, legs: Leg[]): Promise<void> {
-      await db.run('DELETE FROM leg WHERE dayId = ?', [dayId]);
-      let seq = 0;
-      for (const l of legs) {
-        await db.run(
-          'INSERT INTO leg (id, dayId, seq, fromStopId, toStopId, mode, options, selectedOptionId) VALUES (?,?,?,?,?,?,?,?)',
-          [l.id, dayId, seq++, l.fromStopId, l.toStopId, l.mode, JSON.stringify(l.options), l.selectedOptionId],
-        );
-      }
+    saveLegs(dayId: Id, legs: Leg[]): Promise<void> {
+      return write(async () => {
+        await db.run('DELETE FROM leg WHERE dayId = ?', [dayId]);
+        let seq = 0;
+        for (const l of legs) {
+          await db.run(
+            'INSERT INTO leg (id, dayId, seq, fromStopId, toStopId, mode, options, selectedOptionId) VALUES (?,?,?,?,?,?,?,?)',
+            [l.id, dayId, seq++, l.fromStopId, l.toStopId, l.mode, JSON.stringify(l.options), l.selectedOptionId],
+          );
+        }
+      });
     },
 
     async addPhoto(p: Omit<Photo, 'id'>): Promise<Photo> {
@@ -149,6 +183,10 @@ export function makeRepo(db: Db, newId: () => Id) {
       await db.run('UPDATE expense SET date=?, stopId=?, amount=?, currency=?, category=?, memo=? WHERE id=?', [
         e.date, e.stopId, e.amount, e.currency, e.category, e.memo, e.id,
       ]);
+    },
+    /** 방문지를 다른 날로 옮겼을 때 그 방문지의 비용 날짜도 옮긴다. */
+    async setExpenseDateForStop(stopId: Id, date: string): Promise<void> {
+      await db.run('UPDATE expense SET date=? WHERE stopId=?', [date, stopId]);
     },
     async deleteExpense(id: Id): Promise<void> {
       await db.run('DELETE FROM expense WHERE id = ?', [id]);

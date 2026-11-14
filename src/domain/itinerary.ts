@@ -3,10 +3,15 @@ import type { Id, Leg, Stop } from './types';
 const renumber = (stops: Stop[]): Stop[] => stops.map((s, i) => (s.order === i ? s : { ...s, order: i }));
 
 export function reorder(stops: Stop[], from: number, to: number): Stop[] {
+  if (from < 0 || from >= stops.length || to < 0 || to >= stops.length) return stops;
   const out = [...stops];
   const [moved] = out.splice(from, 1);
   out.splice(to, 0, moved);
   return renumber(out);
+}
+
+export function removeStop(stops: Stop[], id: Id): Stop[] {
+  return renumber(stops.filter((s) => s.id !== id));
 }
 
 /** 방문지를 다른 날의 맨 끝으로 옮긴다. */

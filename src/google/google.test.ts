@@ -83,3 +83,23 @@ test('non-200 becomes GoogleApiError with status', async () => {
   const fetchFn = (async () => json({ error: {} }, 403)) as unknown as typeof fetch;
   await expect(makePlaces(fetchFn, 'KEY').details('p')).rejects.toMatchObject({ status: 403 });
 });
+
+test('a request that never answers times out as OfflineError', async () => {
+  jest.useFakeTimers();
+  const fetchFn = ((_url: string, init: RequestInit) =>
+    new Promise((_resolve, reject) => init.signal?.addEventListener('abort', () => reject(new Error('aborted'))))) as unknown as typeof fetch;
+  const p = makePlaces(fetchFn, 'KEY').search('x');
+  jest.advanceTimersByTime(10000);
+  await expect(p).rejects.toBeInstanceOf(OfflineError);
+  jest.useRealTimers();
+});
+
+test('a non-JSON body is an api error, not a crash', async () => {
+  const fetchFn = (async () => ({ ok: true, status: 200, json: async () => { throw new SyntaxError('bad'); } })) as unknown as typeof fetch;
+  await expect(makePlaces(fetchFn, 'KEY').search('x')).rejects.toBeInstanceOf(GoogleApiError);
+});
+
+test('places without a location are left out of search results', async () => {
+  const fetchFn = (async () => json({ places: [{ id: 'p1', displayName: { text: 'a' } }, { id: 'p2', displayName: { text: 'b' }, location: { latitude: 1, longitude: 2 } }] })) as unknown as typeof fetch;
+  expect((await makePlaces(fetchFn, 'KEY').search('x')).map((h) => h.placeId)).toEqual(['p2']);
+});

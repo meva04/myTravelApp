@@ -38,9 +38,9 @@ export function Card({ children, onPress, style }: { children: ReactNode; onPres
   );
 }
 
-export function Chip({ label, selected, onPress }: { label: string; selected?: boolean; onPress: () => void }) {
+export function Chip({ label, selected, onPress, accessibilityLabel }: { label: string; selected?: boolean; onPress: () => void; accessibilityLabel?: string }) {
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={[styles.chip, selected && styles.chipOn]}>
+    <Pressable accessibilityRole="button" accessibilityLabel={accessibilityLabel} onPress={onPress} style={[styles.chip, selected && styles.chipOn]}>
       <Text style={[styles.small, selected && { color: colors.card }]}>{label}</Text>
     </Pressable>
   );

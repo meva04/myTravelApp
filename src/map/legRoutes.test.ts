@@ -2,7 +2,7 @@ import { GoogleApiError, OfflineError } from '@/google/errors';
 import type { Leg, RouteOption, Stop } from '@/domain/types';
 import { makeTestServices } from '@/testing/services';
 
-import { loadLegRoutes, changeLegMode } from './legRoutes';
+import { changeLegMode, loadLegRoutes, readLegRoutes } from './legRoutes';
 
 const opt = (id: string): RouteOption => ({ id, kind: 'default', polyline: [{ lat: 1, lng: 1 }, { lat: 2, lng: 2 }], distanceMeters: 100, durationSeconds: 60 });
 const stop = (id: string, dayId: string, order: number): Stop => ({
@@ -64,4 +64,37 @@ test('changing the travel mode drops the old route and fetches a new one', async
   const r = await changeLegMode(sv, dayId, 'l1', 'transit');
   expect(compute).toHaveBeenCalledWith({ lat: 0, lng: 0 }, { lat: 1, lng: 1 }, 'transit');
   expect(r.legs[0]).toMatchObject({ mode: 'transit', selectedOptionId: 't1' });
+});
+
+test('readLegRoutes returns stored stops and legs without any network call', async () => {
+  const { sv, dayId } = await setup();
+  const compute = jest.fn(async () => opt('new'));
+  sv.routes.compute = compute;
+  const r = await readLegRoutes(sv, dayId);
+  expect(r.stops.map((x) => x.id)).toEqual(['A', 'B', 'C']);
+  expect(r.status).toEqual({ l1: 'ready', l2: 'loading' });
+  expect(compute).not.toHaveBeenCalled();
+});
+
+test('an unexpected failure marks the leg as error instead of breaking the screen', async () => {
+  const { sv, dayId } = await setup();
+  sv.routes.compute = async () => { throw new SyntaxError('Unexpected token <'); };
+  expect((await loadLegRoutes(sv, dayId)).status.l2).toBe('error');
+});
+
+test('changing mode while offline keeps the route that was already saved', async () => {
+  const { sv, dayId } = await setup();
+  sv.routes.compute = async () => { throw new OfflineError(); };
+  const r = await changeLegMode(sv, dayId, 'l1', 'transit');
+  expect(r.status.l1).toBe('offline');
+  expect(r.legs[0]).toMatchObject({ mode: 'walk', options: [opt('o1')], selectedOptionId: 'o1' });
+  expect((await sv.repo.listLegs(dayId))[0].options).toEqual([opt('o1')]);
+});
+
+test('two loads at the same time fetch each missing leg only once', async () => {
+  const { sv, dayId } = await setup();
+  const compute = jest.fn(async () => opt('new'));
+  sv.routes.compute = compute;
+  await Promise.all([loadLegRoutes(sv, dayId), loadLegRoutes(sv, dayId)]);
+  expect(compute).toHaveBeenCalledTimes(1);
 });

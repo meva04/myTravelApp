@@ -1,9 +1,10 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
+import { Alert } from 'react-native';
 
 import { OfflineError } from '@/google/errors';
 import { makeTestServices, withServices } from '@/testing/services';
 
-import { AddStopScreen } from './AddStopScreen';
+import { AddStopScreen, appendStop } from './AddStopScreen';
 import { NewTripScreen } from './NewTripScreen';
 import { TripHomeScreen } from './TripHomeScreen';
 import { TripListScreen } from './TripListScreen';
@@ -87,4 +88,51 @@ test('searching while offline offers to retry when connected', async () => {
   await fireEvent.changeText(screen.getByPlaceholderText('장소 이름으로 검색'), 'x');
   await fireEvent.press(screen.getByText('검색'));
   expect(await screen.findByText('연결되면 다시 시도')).toBeTruthy();
+});
+
+async function dayWithStops(names: string[], days = 1) {
+  const sv = await makeTestServices();
+  const trip = await sv.repo.createTrip({ name: 't', city: 'c', startDate: '2027-03-01', endDate: `2027-03-0${days}`, baseCurrency: 'KRW' });
+  const ds = await sv.repo.listDays(trip.id);
+  for (const name of names) await appendStop(sv, ds[0].id, { placeId: null, name, lat: 1, lng: 1 });
+  return { sv, trip, days: ds };
+}
+const home = (sv: Awaited<ReturnType<typeof makeTestServices>>, tripId: string, today?: string) =>
+  withServices(sv, <TripHomeScreen tripId={tripId} today={today} onAddStop={noop} onOpenMap={noop} onOpenStop={noop} onExpenses={noop} onSettings={noop} />);
+
+test('deleting the only stop of a day empties the day', async () => {
+  const { sv, trip, days } = await dayWithStops(['센소지']);
+  jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => buttons?.find((b) => b.style === 'destructive')?.onPress?.());
+  await render(home(sv, trip.id));
+  await fireEvent.press(await screen.findByText('삭제'));
+  expect(await screen.findByText('이 날은 아직 비어 있어요')).toBeTruthy();
+  expect(await sv.repo.listStops(days[0].id)).toEqual([]);
+});
+
+test('moving a stop to another day carries its expenses to that date', async () => {
+  const { sv, trip, days } = await dayWithStops(['A', 'B'], 2);
+  const [a] = await sv.repo.listStops(days[0].id);
+  await sv.repo.addExpense({ tripId: trip.id, date: '2027-03-01', stopId: a.id, amount: 100, currency: 'KRW', category: 'food', memo: '' });
+  await render(home(sv, trip.id));
+  await fireEvent.press((await screen.findAllByText('다른 날로'))[0]);
+  await fireEvent.press(screen.getAllByText('2일차')[1]);
+  await screen.findByText('B');
+  expect((await sv.repo.listStops(days[1].id)).map((s) => s.name)).toEqual(['A']);
+  expect((await sv.repo.listStops(days[0].id)).map((s) => [s.name, s.order])).toEqual([['B', 0]]);
+  expect((await sv.repo.listExpenses(trip.id))[0].date).toBe('2027-03-02');
+});
+
+test('trip home opens on today when the trip is under way', async () => {
+  const { sv, trip, days } = await dayWithStops(['A'], 2);
+  await appendStop(sv, days[1].id, { placeId: null, name: '둘째날', lat: 1, lng: 1 });
+  await render(home(sv, trip.id, '2027-03-02'));
+  expect(await screen.findByText('둘째날')).toBeTruthy();
+  expect(screen.queryByText('A')).toBeNull();
+});
+
+test('the day summary shows spending that could not be converted', async () => {
+  const { sv, trip } = await dayWithStops(['A']);
+  await sv.repo.addExpense({ tripId: trip.id, date: '2027-03-01', stopId: null, amount: 20, currency: 'EUR', category: 'etc', memo: '' });
+  await render(home(sv, trip.id));
+  expect(await screen.findByText(/환산 안 됨: 20 EUR/)).toBeTruthy();
 });

@@ -1,4 +1,4 @@
-import { bearingTo, fitRegion, isOffscreen, nextRegion, type Region } from './camera';
+import { bearingTo, fitRegion, isOffscreen, nearestStopAt, nextRegion, type Region } from './camera';
 
 const zoomedIn: Region = { lat: 35.0, lng: 139.0, latDelta: 0.01, lngDelta: 0.01 };
 const pts = [{ lat: 35.0, lng: 139.0 }, { lat: 35.1, lng: 139.2 }];
@@ -61,4 +61,12 @@ test('bearingTo points from the screen centre to the target', () => {
   expect(bearingTo(zoomedIn, { lat: 35, lng: 140 })).toBeCloseTo(90, 0);
   expect(bearingTo(zoomedIn, { lat: 34, lng: 139 })).toBeCloseTo(180, 0);
   expect(bearingTo(zoomedIn, { lat: 35, lng: 138 })).toBeCloseTo(270, 0);
+});
+
+test('nearestStopAt picks the stop under the finger and ignores far taps', () => {
+  const stops = [{ id: 'a', lat: 35.0, lng: 139.0 }, { id: 'b', lat: 35.003, lng: 139.003 }];
+  expect(nearestStopAt({ lat: 35.0002, lng: 139.0001 }, stops, zoomedIn)).toBe('a');
+  expect(nearestStopAt({ lat: 35.0029, lng: 139.0031 }, stops, zoomedIn)).toBe('b');
+  expect(nearestStopAt({ lat: 35.0015, lng: 139.0015 }, stops, zoomedIn)).toBeNull();
+  expect(nearestStopAt({ lat: 35, lng: 139 }, [], zoomedIn)).toBeNull();
 });

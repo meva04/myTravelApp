@@ -11,10 +11,13 @@ type Props = {
   getAccess: () => Promise<LocationAccess>;
   requestAlways: () => Promise<LocationAccess>;
   openSystemSettings: () => void;
+  /** 알림 권한이 있는지 */
+  getNotifications: () => Promise<boolean>;
+  requestNotifications: () => Promise<boolean>;
   onDeleted?: () => void;
 };
 
-export function SettingsScreen({ tripId, getAccess, requestAlways, openSystemSettings, onDeleted }: Props) {
+export function SettingsScreen({ tripId, getAccess, requestAlways, openSystemSettings, getNotifications, requestNotifications, onDeleted }: Props) {
   const sv = useServices();
   const { repo } = sv;
   const { data: trip, reload } = useLoad(() => repo.getTrip(tripId), [tripId]);
@@ -24,9 +27,11 @@ export function SettingsScreen({ tripId, getAccess, requestAlways, openSystemSet
   const [newCur, setNewCur] = useState('');
   const [newRate, setNewRate] = useState('');
 
+  const [notifications, setNotifications] = useState<boolean>();
   useEffect(() => {
     void getAccess().then(setAccess);
-  }, [getAccess]);
+    void getNotifications().then(setNotifications);
+  }, [getAccess, getNotifications]);
 
   if (!trip) return <Screen>{null}</Screen>;
   const baseCur = (base ?? trip.baseCurrency).trim().toUpperCase();
@@ -50,6 +55,7 @@ export function SettingsScreen({ tripId, getAccess, requestAlways, openSystemSet
   const ask = async () => {
     const result = await requestAlways();
     setAccess(result);
+    setNotifications(await requestNotifications());
     if (result === 'always') sv.onItineraryChanged();
     else openSystemSettings();
   };
@@ -73,9 +79,10 @@ export function SettingsScreen({ tripId, getAccess, requestAlways, openSystemSet
       <Card>
         <Txt kind="heading">{t('settings.location')}</Txt>
         {access === 'always' && <Txt kind="soft">{t('settings.locationAlways')}</Txt>}
-        {access !== undefined && access !== 'always' && (
+        {notifications === false && <Txt kind="soft">{t('settings.notificationsOff')}</Txt>}
+        {access !== undefined && (access !== 'always' || notifications === false) && (
           <>
-            <Txt kind="soft">{t('settings.locationNeedAlways')}</Txt>
+            {access !== 'always' && <Txt kind="soft">{t('settings.locationNeedAlways')}</Txt>}
             <Row>
               <Button kind="ghost" label={t('settings.locationAsk')} onPress={ask} />
               <Button kind="ghost" label={t('settings.openSettings')} onPress={openSystemSettings} />

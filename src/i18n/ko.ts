@@ -57,6 +57,7 @@ export const ko = {
 
   'stop.arrive': '도착',
   'stop.arrivedAt': '도착 {time}',
+  'stop.badTime': '시간은 09:30 처럼 입력해 주세요',
   'stop.editArrival': '도착 시간 수정 (HH:mm)',
   'stop.plannedTime': '예정 시간 (HH:mm)',
   'stop.memo': '메모',
@@ -87,6 +88,9 @@ export const ko = {
   'expense.setRate': '환율 입력하기',
   'expense.addLoose': '장소 없이 비용 추가',
   'expense.date': '날짜 (예: 2027-03-01)',
+  'expense.badDate': '여행 기간 안의 날짜를 입력해 주세요',
+  'expense.deleteLabel': '{name} 삭제',
+  'expense.deleteConfirm': '이 비용을 지울까요?',
   'expense.none': '아직 기록한 비용이 없어요',
   'cat.food': '식비',
   'cat.transport': '교통',
@@ -102,6 +106,7 @@ export const ko = {
   'settings.location': '도착 자동 기록',
   'settings.locationAlways': '켜짐 — 일정에 있는 장소에 도착하면 시간을 자동으로 기록해요.',
   'settings.locationNeedAlways': '도착 시간을 자동으로 기록하려면 위치 접근을 "항상 허용"으로 바꿔 주세요. 지금은 장소 화면에서 직접 "도착"을 눌러 기록할 수 있어요.',
+  'settings.notificationsOff': '도착 알림이 꺼져 있어요. 도착 시간은 기록되지만 알림은 오지 않아요.',
   'settings.locationAsk': '위치 권한 요청',
   'settings.openSettings': '아이폰 설정 열기',
 } as const;

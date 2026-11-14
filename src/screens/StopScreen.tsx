@@ -1,16 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Image, ScrollView, View } from 'react-native';
 
-import { markArrived } from '@/domain/arrival';
 import { summarizeExpenses } from '@/domain/expenses';
-import type { Photo, Stop } from '@/domain/types';
-import { GoogleApiError, OfflineError } from '@/google/errors';
+import type { Photo } from '@/domain/types';
+import { OfflineError } from '@/google/errors';
 import type { PlaceDetails } from '@/google/places';
 import { t } from '@/i18n/ko';
 import { useLoad, useServices } from '@/state/ServicesContext';
 import { radius, space } from '@/theme/tokens';
 import { ExpenseForm } from '@/ui/ExpenseForm';
-import { formatMoney, formatTime, isTime } from '@/ui/format';
+import { formatAmounts, formatMoney, formatTime, isTime } from '@/ui/format';
 import { Button, Card, Chip, Field, Row, Screen, Txt } from '@/ui/kit';
 import { Stamp } from '@/ui/Stamp';
 
@@ -21,11 +20,12 @@ type Props = {
   openUrl: (url: string) => void;
   now?: () => string;
   onPhotoRemoved?: (uri: string) => void;
+  refreshKey?: number;
 };
 
 type Info = { state: 'loading' | 'offline' | 'error' | 'none' } | { state: 'ready'; details: PlaceDetails };
 
-export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () => new Date().toISOString(), onPhotoRemoved }: Props) {
+export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () => new Date().toISOString(), onPhotoRemoved, refreshKey = 0 }: Props) {
   const sv = useServices();
   const { repo } = sv;
   const { data, reload } = useLoad(async () => {
@@ -36,12 +36,14 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
     if (!day || !trip) return null;
     const expenses = (await repo.listExpenses(trip.id)).filter((e) => e.stopId === stopId);
     return { stop, day, trip, expenses, photos: await repo.listPhotos(stopId) };
-  }, [stopId]);
+  }, [stopId, refreshKey]);
 
   const [memo, setMemo] = useState<string>();
   const [planned, setPlanned] = useState<string>();
   const [arrivalEdit, setArrivalEdit] = useState<string>();
   const [info, setInfo] = useState<Info>({ state: 'loading' });
+  const [infoTry, setInfoTry] = useState(0);
+  const [badTime, setBadTime] = useState(false);
   const placeId = data?.stop.placeId;
 
   useEffect(() => {
@@ -50,34 +52,45 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
     let alive = true;
     sv.places.details(placeId).then(
       (details) => alive && setInfo({ state: 'ready', details }),
-      (e) => {
-        if (!alive) return;
-        if (e instanceof OfflineError) setInfo({ state: 'offline' });
-        else if (e instanceof GoogleApiError) setInfo({ state: 'error' });
-        else throw e;
-      },
+      (e) => alive && setInfo({ state: e instanceof OfflineError ? 'offline' : 'error' }),
     );
     return () => {
       alive = false;
     };
-  }, [placeId, sv.places]);
+  }, [placeId, sv.places, infoTry]);
 
   if (!data) return <Screen>{null}</Screen>;
   const { stop, day, trip, expenses, photos } = data;
 
-  const save = async (next: Stop, itineraryChanged = false) => {
-    await repo.updateStop(next);
-    if (itineraryChanged) sv.onItineraryChanged();
+  // 화면의 옛 사본으로 다른 칸을 덮어쓰지 않도록, 바꾼 칸만 저장한다.
+  const arrive = async () => {
+    await repo.markStopArrived(stopId, now(), 'manual');
+    sv.onItineraryChanged();
     reload();
   };
-  const arrive = () => save(markArrived(stop, now(), 'manual'), true);
-  const saveArrivalTime = () => {
-    if (!stop.arrivedAt || !arrivalEdit || !isTime(arrivalEdit)) return;
+  const checkTime = (v: string) => {
+    const ok = v === '' || isTime(v);
+    setBadTime(!ok);
+    return ok;
+  };
+  const saveArrivalTime = async () => {
+    if (!stop.arrivedAt || !arrivalEdit || !checkTime(arrivalEdit)) return;
     const d = new Date(stop.arrivedAt);
     const [h, m] = arrivalEdit.split(':').map(Number);
     d.setHours(h, m, 0, 0);
     setArrivalEdit(undefined);
-    return save({ ...stop, arrivedAt: d.toISOString(), arrivalMethod: 'manual' });
+    await repo.setStopArrivalTime(stopId, d.toISOString());
+    reload();
+  };
+  const savePlanned = async () => {
+    if (planned === undefined || !checkTime(planned)) return;
+    await repo.setStopPlannedTime(stopId, planned || null);
+    reload();
+  };
+  const saveMemo = async () => {
+    if (memo === undefined || memo === stop.memo) return;
+    await repo.setStopMemo(stopId, memo);
+    reload();
   };
   const addPhoto = async (source: 'library' | 'camera') => {
     const picked = await pickPhoto(source);
@@ -91,7 +104,9 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
     reload();
   };
 
-  const subtotal = summarizeExpenses(expenses, trip).byStop[stopId] ?? 0;
+  const summary = summarizeExpenses(expenses, trip);
+  const subtotal = summary.byStop[stopId] ?? 0;
+  const unconverted = formatAmounts(summary.unconvertedByStop[stopId]);
 
   return (
     <Screen>
@@ -108,28 +123,29 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
                 placeholder={t('stop.editArrival')}
                 value={arrivalEdit ?? ''}
                 onChangeText={setArrivalEdit}
-                onBlur={saveArrivalTime}
+                onBlur={() => void saveArrivalTime()}
                 keyboardType="numbers-and-punctuation"
               />
             </View>
           </Row>
         ) : (
-          <Button label={t('stop.arrive')} onPress={arrive} />
+          <Button label={t('stop.arrive')} onPress={() => void arrive()} />
         )}
         <Field
           placeholder={t('stop.plannedTime')}
           value={planned ?? stop.plannedTime ?? ''}
           onChangeText={setPlanned}
-          onBlur={() => planned !== undefined && (planned === '' || isTime(planned)) && save({ ...stop, plannedTime: planned || null })}
+          onBlur={() => void savePlanned()}
           keyboardType="numbers-and-punctuation"
         />
         <Field
           placeholder={t('stop.memoPlaceholder')}
           value={memo ?? stop.memo}
           onChangeText={setMemo}
-          onBlur={() => memo !== undefined && memo !== stop.memo && save({ ...stop, memo })}
+          onBlur={() => void saveMemo()}
           multiline
         />
+        {badTime && <Txt kind="soft">{t('stop.badTime')}</Txt>}
       </Card>
 
       <Card>
@@ -169,6 +185,7 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
           </Row>
         ))}
         <Txt kind="soft">{t('stop.subtotal', { amount: formatMoney(subtotal, trip.baseCurrency) })}</Txt>
+        {unconverted !== '' && <Txt kind="soft">{`${t('expense.unconverted')}: ${unconverted}`}</Txt>}
         <ExpenseForm
           defaultCurrency={trip.baseCurrency}
           onAdd={async (e) => {
@@ -182,7 +199,12 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
         <Card>
           <Txt kind="heading">{t('stop.placeInfo')}</Txt>
           {info.state === 'loading' && <Txt kind="soft">{t('common.loading')}</Txt>}
-          {info.state === 'offline' && <Txt kind="soft">{t('stop.infoOffline')}</Txt>}
+          {info.state === 'offline' && (
+            <>
+              <Txt kind="soft">{t('stop.infoOffline')}</Txt>
+              <Button kind="ghost" label={t('common.retryWhenOnline')} onPress={() => setInfoTry((n) => n + 1)} />
+            </>
+          )}
           {info.state === 'error' && <Txt kind="soft">{t('stop.infoError')}</Txt>}
           {info.state === 'ready' && (
             <>

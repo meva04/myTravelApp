@@ -84,3 +84,44 @@ test('memo edits are saved', async () => {
   await fireEvent(memo, 'blur');
   expect((await sv.repo.getStop('s1'))?.memo).toBe('사람이 많았다');
 });
+
+test('pressing 도착 on a stale screen keeps an arrival recorded in the background', async () => {
+  const { sv, ui } = await setup();
+  await render(ui);
+  await screen.findByText('도착');
+  await sv.repo.markStopArrived('s1', '2027-03-01T01:00:00.000Z', 'auto'); // 화면이 열린 사이 백그라운드 감지
+  await fireEvent.press(screen.getByText('도착'));
+  expect(await sv.repo.getStop('s1')).toMatchObject({ arrivedAt: '2027-03-01T01:00:00.000Z', arrivalMethod: 'auto' });
+  expect(await screen.findByTestId('stamp')).toBeTruthy();
+});
+
+test('editing the memo on a stale screen does not erase a background arrival', async () => {
+  const { sv, ui } = await setup();
+  await render(ui);
+  const memo = await screen.findByPlaceholderText('여기서 있었던 일을 적어보세요');
+  await sv.repo.markStopArrived('s1', '2027-03-01T01:00:00.000Z', 'auto');
+  await fireEvent.changeText(memo, '좋았다');
+  await fireEvent(memo, 'blur');
+  expect(await sv.repo.getStop('s1')).toMatchObject({ memo: '좋았다', arrivedAt: '2027-03-01T01:00:00.000Z' });
+});
+
+test('an expense in a currency without a rate is shown next to the subtotal', async () => {
+  const { sv, trip, ui } = await setup();
+  await sv.repo.addExpense({ tripId: trip.id, date: '2027-03-01', stopId: 's1', amount: 20, currency: 'EUR', category: 'etc', memo: '' });
+  await render(ui);
+  expect(await screen.findByText(/환산 안 됨: 20 EUR/)).toBeTruthy();
+});
+
+test('place info offline offers a retry that loads it once connected', async () => {
+  const { sv, ui } = await setup();
+  let online = false;
+  sv.places.details = async (placeId) => {
+    if (!online) throw new OfflineError();
+    return { placeId, name: '센소지', address: '', lat: 35, lng: 139, rating: 4.1, ratingCount: 10, openingHours: [], website: null, photoUrls: [] };
+  };
+  await render(ui);
+  await fireEvent.press(await screen.findByText('연결되면 다시 시도'));
+  online = true;
+  await fireEvent.press(screen.getByText('연결되면 다시 시도'));
+  expect(await screen.findByText('★ 4.1 (10)')).toBeTruthy();
+});

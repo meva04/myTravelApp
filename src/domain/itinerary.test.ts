@@ -1,5 +1,5 @@
 import type { Leg, Stop } from './types';
-import { moveToDay, reorder, syncLegs } from './itinerary';
+import { moveToDay, removeStop, reorder, syncLegs } from './itinerary';
 
 const stop = (id: string, order: number, dayId = 'd1'): Stop => ({
   id, dayId, order, placeId: null, name: id, lat: 0, lng: 0, plannedTime: null, arrivedAt: null, arrivalMethod: null, memo: '',
@@ -36,4 +36,15 @@ test('moveToDay appends to the other day and keeps both orders contiguous', () =
   const r = moveToDay(from[1], from, to, 'd2');
   expect(r.from.map((s) => [s.id, s.order])).toEqual([['A', 0], ['C', 1]]);
   expect(r.to.map((s) => [s.id, s.order, s.dayId])).toEqual([['X', 0, 'd2'], ['B', 1, 'd2']]);
+});
+
+test('removeStop removes the stop and renumbers, including the last one', () => {
+  expect(removeStop([stop('A', 0), stop('B', 1), stop('C', 2)], 'B').map((s) => [s.id, s.order])).toEqual([['A', 0], ['C', 1]]);
+  expect(removeStop([stop('A', 0)], 'A')).toEqual([]);
+});
+
+test('reorder with an out-of-range index returns the list unchanged', () => {
+  expect(reorder([], 0, 0)).toEqual([]);
+  const list = [stop('A', 0)];
+  expect(reorder(list, 3, 0)).toEqual(list);
 });

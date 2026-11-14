@@ -7,7 +7,7 @@ import { Button, Chip, Field, Row, Txt } from './kit';
 
 export type ExpenseInput = { amount: number; currency: string; category: Category; memo: string };
 
-export function ExpenseForm({ defaultCurrency, onAdd }: { defaultCurrency: string; onAdd: (e: ExpenseInput) => Promise<void> | void }) {
+export function ExpenseForm({ defaultCurrency, onAdd }: { defaultCurrency: string; onAdd: (e: ExpenseInput) => Promise<void | false> | void | false }) {
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState(defaultCurrency);
   const [category, setCategory] = useState<Category>('food');
@@ -20,7 +20,7 @@ export function ExpenseForm({ defaultCurrency, onAdd }: { defaultCurrency: strin
     const ok = amount.trim() !== '' && Number.isFinite(value) && value > 0 && /^[A-Z]{3}$/.test(cur);
     setInvalid(!ok);
     if (!ok) return;
-    await onAdd({ amount: value, currency: cur, category, memo: memo.trim() });
+    if ((await onAdd({ amount: value, currency: cur, category, memo: memo.trim() })) === false) return; // 바깥에서 거절하면 입력을 남겨둔다
     setAmount('');
     setMemo('');
   };

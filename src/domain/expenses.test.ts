@@ -37,3 +37,9 @@ test('empty list sums to zero', () => {
   expect(s.byCategory.food).toBe(0);
   expect(s.unconverted).toEqual({});
 });
+
+test('unconverted amounts are also reported per stop and per date', () => {
+  const s = summarizeExpenses([e({ amount: 20, currency: 'EUR', stopId: 's1', date: '2027-03-02' })], trip);
+  expect(s.unconvertedByStop).toEqual({ s1: { EUR: 20 } });
+  expect(s.unconvertedByDate).toEqual({ '2027-03-02': { EUR: 20 } });
+});

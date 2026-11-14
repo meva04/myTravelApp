@@ -1,5 +1,5 @@
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { bearingTo, isOffscreen, type Region } from '@/domain/camera';
@@ -38,13 +38,8 @@ export function DayMapScreen({ dayId, refreshKey = 0, getMe, onOpenStop, onAddSt
 
   const points = useMemo(() => allPoints(stops, legs), [stops, legs]);
 
-  // 그날의 지도를 처음 열 때 한 번만 전체 경로에 맞춘다. 이후에는 사용자가 정한 화면을 건드리지 않는다.
-  const opened = useRef(false);
-  useEffect(() => {
-    if (!loaded || opened.current || points.length === 0) return;
-    opened.current = true;
-    map.current?.send({ type: 'dayOpened', points });
-  }, [loaded, points]);
+  // 그날의 지도를 처음 열 때의 전체 맞춤은 DayMap 의 시작 화면(initialPoints)으로 한다.
+  // 그 뒤로는 방문지가 늘어도 사용자가 정한 화면을 건드리지 않는다.
 
   const select = (s: Selection) => {
     setSelection(s);
@@ -74,8 +69,10 @@ export function DayMapScreen({ dayId, refreshKey = 0, getMe, onOpenStop, onAddSt
 
   return (
     <View style={styles.fill}>
+      {loaded && (
       <DayMap
         ref={map}
+        initialPoints={points}
         stops={stops}
         legs={legs}
         selection={selection}
@@ -83,6 +80,7 @@ export function DayMapScreen({ dayId, refreshKey = 0, getMe, onOpenStop, onAddSt
         onRegion={setRegion}
         onLongPress={(at) => setDraft({ at, name: '' })}
       />
+      )}
 
       {offscreen && target && region && (
         <OffscreenHint bearing={bearingTo(region, target)} onGo={() => map.current?.send({ type: 'goToTarget', target })} />

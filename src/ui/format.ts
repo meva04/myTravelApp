@@ -12,5 +12,15 @@ export function formatTime(iso: string): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-export const isDate = (s: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`));
+export function isDate(s: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(`${s}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s; // 2027-02-31 같은 날짜를 거른다
+}
+
+/** 통화별 금액을 "20 EUR, 5 USD" 처럼 잇는다. */
+export const formatAmounts = (byCurrency: Record<string, number> | undefined): string =>
+  Object.entries(byCurrency ?? {})
+    .map(([cur, amount]) => formatMoney(amount, cur))
+    .join(', ');
 export const isTime = (s: string): boolean => /^([01]\d|2[0-3]):[0-5]\d$/.test(s);

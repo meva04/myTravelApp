@@ -52,7 +52,7 @@ export function makePlaces(fetchFn: typeof fetch, apiKey: string, now: () => num
         headers: headers('places.id,places.displayName,places.formattedAddress,places.location'),
         body: JSON.stringify(body),
       });
-      return (res.places ?? []).map(toHit);
+      return (res.places ?? []).filter((p) => p.location).map(toHit);
     },
 
     async details(placeId: string): Promise<PlaceDetails> {
@@ -70,7 +70,7 @@ export function makePlaces(fetchFn: typeof fetch, apiKey: string, now: () => num
         ratingCount: p.userRatingCount ?? null,
         openingHours: p.regularOpeningHours?.weekdayDescriptions ?? [],
         website: p.websiteUri ?? null,
-        photoUrls: (p.photos ?? []).slice(0, 6).map((ph) => `${BASE}/${ph.name}/media?maxWidthPx=800&key=${apiKey}`),
+        photoUrls: (p.photos ?? []).slice(0, 3).map((ph) => `${BASE}/${ph.name}/media?maxWidthPx=800&key=${apiKey}`),
       };
       cache.set(placeId, { at: now(), value });
       return value;

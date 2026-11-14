@@ -63,3 +63,22 @@ export function bearingTo(r: Region, p: LatLng): number {
   const dx = (p.lng - r.lng) * Math.cos((r.lat * Math.PI) / 180);
   return ((Math.atan2(dx, dy) * 180) / Math.PI + 360) % 360;
 }
+
+/**
+ * 지도를 누른 곳에 있는 방문지. 화면 높이의 4% 안쪽이면 그 방문지를 누른 것으로 본다.
+ * (마커를 직접 누르게 하면 구글 지도가 카메라를 마커로 옮겨 버리므로, 지도 탭으로 대신 판정한다.)
+ */
+export function nearestStopAt<T extends { id: string } & LatLng>(tap: LatLng, stops: T[], r: Region): string | null {
+  const radius = r.latDelta * 0.04;
+  const lngScale = Math.cos((r.lat * Math.PI) / 180);
+  let best: string | null = null;
+  let bestD = radius;
+  for (const s of stops) {
+    const d = Math.hypot(s.lat - tap.lat, (s.lng - tap.lng) * lngScale);
+    if (d <= bestD) {
+      bestD = d;
+      best = s.id;
+    }
+  }
+  return best;
+}
