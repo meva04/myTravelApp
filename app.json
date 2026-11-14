@@ -6,9 +6,14 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "tripnote",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.example.tripnote",
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -19,10 +24,6 @@
       },
       "predictiveBackGestureEnabled": false
     },
-    "web": {
-      "output": "server",
-      "favicon": "./assets/images/favicon.png"
-    },
     "plugins": [
       "expo-router",
       [
@@ -31,6 +32,24 @@
           "backgroundColor": "#208AEF",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
+        }
+      ],
+      "expo-sqlite",
+      "expo-task-manager",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "지도에 현재 위치를 표시하고 도착을 기록하기 위해 위치를 사용합니다",
+          "locationAlwaysAndWhenInUsePermission": "일정에 있는 장소에 도착한 시간을 자동으로 기록하기 위해 위치를 사용합니다",
+          "isIosBackgroundLocationEnabled": true
+        }
+      ],
+      "expo-notifications",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "방문한 곳에 사진을 남기기 위해 사진첩에 접근합니다",
+          "cameraPermission": "방문한 곳에서 사진을 찍어 기록하기 위해 카메라를 사용합니다"
         }
       ]
     ],

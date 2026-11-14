@@ -1,56 +1,29 @@
-# Welcome to your Expo app 👋
+# tripnote (가칭)
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+계획 → 실행 → 기록이 하나로 이어지는 여행 노트 앱. 엑스포(리액트 네이티브)로 만든 아이폰 앱입니다.
 
-## Get started
+- 설계: `docs/superpowers/specs/2026-11-14-travel-journal-app-design.md`
+- 맥에서 내 아이폰에 설치하기: `docs/SETUP-MAC.md`
+- 앱스토어 출시 체크리스트: `docs/STORE-CHECKLIST.md`
 
-1. Install dependencies
+## 폴더
 
-   ```bash
-   npm install
-   ```
+| 폴더 | 내용 |
+|---|---|
+| `src/theme/tokens.ts` | 색·글꼴·간격. 디자인을 바꿀 때 여기부터 |
+| `src/i18n/ko.ts` | 화면에 나오는 모든 문구 |
+| `src/ui` | 버튼·카드·스탬프 같은 기본 부품 |
+| `src/screens` | 화면 |
+| `src/app` | 화면 주소(라우팅) |
+| `src/domain` | 화면과 무관한 규칙 (지도 카메라, 일정 순서, 비용 합계, 도착 판정) |
+| `src/map`, `src/google`, `src/location`, `src/records`, `src/db` | 지도, 구글 연결, 도착 감지, 사진, 저장 |
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## 검사
 
 ```bash
-npm run reset-project
+npm test
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
-
-### Other setup steps
-
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```bash
+npm run typecheck
+```
