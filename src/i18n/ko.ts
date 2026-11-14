@@ -6,6 +6,8 @@ export const ko = {
   'common.add': '추가',
   'common.retryWhenOnline': '연결되면 다시 시도',
   'common.retry': '다시 시도',
+  'arrival.notifyTitle': '{name}에 도착했어요',
+  'arrival.notifyBody': '도착 시간을 기록했어요. 사진과 메모를 남겨보세요.',
 } as const;
 
 export type StringKey = keyof typeof ko;
