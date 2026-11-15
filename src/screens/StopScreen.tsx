@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, StyleSheet, View } from 'react-native';
 
-import { summarizeExpenses } from '@/domain/expenses';
+import { peopleOf, summarizeExpenses } from '@/domain/expenses';
 import { parseChecklist, serializeChecklist, type CheckItem } from '@/domain/checklist';
 import type { Photo } from '@/domain/types';
 import { OfflineError } from '@/google/errors';
@@ -321,6 +321,7 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
         {unconverted !== '' && <Txt kind="soft">{`${t('expense.unconverted')}: ${unconverted}`}</Txt>}
         <ExpenseForm
           defaultCurrency={trip.baseCurrency}
+          people={peopleOf(trip)}
           onAdd={async (e) => {
             await repo.addExpense({ ...e, tripId: trip.id, date: day.date, stopId });
             reload();

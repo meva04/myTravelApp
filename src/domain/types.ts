@@ -13,7 +13,13 @@ export type Trip = {
   baseCurrency: string;
   /** rates[cur] = 1 cur 가 기준 통화로 얼마인지 */
   rates: Record<string, number>;
+  /** 같이 가는 사람 (나 말고). 비용을 나눠 계산할 때 쓴다. */
+  members?: Member[];
 };
+
+/** 같이 가는 사람. '나'는 늘 있는 사람이라 목록에 넣지 않고 id 'me' 로 부른다. */
+export type Member = { id: Id; name: string };
+export const ME = 'me';
 
 export type Day = { id: Id; tripId: Id; date: string };
 
@@ -103,6 +109,10 @@ export type Expense = {
   memo: string;
   /** 이동 메모에 붙인 비용이면 그 메모 id */
   noteId?: Id | null;
+  /** 낸 사람 (없으면 나) */
+  paidBy?: Id | null;
+  /** 나눌 사람들 (없으면 지금 여행의 모든 사람) */
+  splitWith?: Id[] | null;
 };
 
 /** 그날 일정의 한 칸: 장소 또는 이동 메모 */

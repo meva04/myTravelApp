@@ -13,7 +13,7 @@ export const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS trip (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, city TEXT NOT NULL,
     startDate TEXT NOT NULL, endDate TEXT NOT NULL,
-    baseCurrency TEXT NOT NULL, rates TEXT NOT NULL DEFAULT '{}')`,
+    baseCurrency TEXT NOT NULL, rates TEXT NOT NULL DEFAULT '{}', members TEXT NOT NULL DEFAULT '[]')`,
   `CREATE TABLE IF NOT EXISTS day (
     id TEXT PRIMARY KEY, tripId TEXT NOT NULL REFERENCES trip(id) ON DELETE CASCADE,
     date TEXT NOT NULL)`,
@@ -34,7 +34,7 @@ export const SCHEMA = [
     id TEXT PRIMARY KEY, tripId TEXT NOT NULL REFERENCES trip(id) ON DELETE CASCADE,
     date TEXT NOT NULL, stopId TEXT REFERENCES stop(id) ON DELETE SET NULL,
     amount REAL NOT NULL, currency TEXT NOT NULL, category TEXT NOT NULL,
-    memo TEXT NOT NULL DEFAULT '', noteId TEXT)`,
+    memo TEXT NOT NULL DEFAULT '', noteId TEXT, paidBy TEXT, splitWith TEXT)`,
   `CREATE TABLE IF NOT EXISTS booking (
     id TEXT PRIMARY KEY, tripId TEXT NOT NULL REFERENCES trip(id) ON DELETE CASCADE,
     kind TEXT NOT NULL, data TEXT NOT NULL)`,
@@ -51,4 +51,7 @@ export const ADDED_COLUMNS: [string, string, string][] = [
   ['expense', 'noteId', 'TEXT'],
   ['stop', 'kind', 'TEXT'],
   ['stop', 'bookingId', 'TEXT'],
+  ['trip', 'members', "TEXT NOT NULL DEFAULT '[]'"],
+  ['expense', 'paidBy', 'TEXT'],
+  ['expense', 'splitWith', 'TEXT'],
 ];

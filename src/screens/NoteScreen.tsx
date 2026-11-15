@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { summarizeExpenses } from '@/domain/expenses';
+import { peopleOf, summarizeExpenses } from '@/domain/expenses';
 import type { Photo } from '@/domain/types';
 import { t } from '@/i18n/ko';
 import { useLoad, useServices } from '@/state/ServicesContext';
@@ -157,6 +157,7 @@ export function NoteScreen({ noteId, pickPhoto, resolvePhoto, onPhotoRemoved, on
         {unconverted !== '' && <Txt kind="soft">{`${t('expense.unconverted')}: ${unconverted}`}</Txt>}
         <ExpenseForm
           defaultCurrency={trip.baseCurrency}
+          people={peopleOf(trip)}
           onAdd={async (e) => {
             await repo.addExpense({ ...e, tripId: trip.id, date: day.date, stopId: null, noteId });
             reload();

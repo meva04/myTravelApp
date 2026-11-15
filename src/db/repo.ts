@@ -4,7 +4,10 @@ import type { Booking, Day, Expense, Id, Leg, Note, Photo, SeqItem, Stop, Trip }
 import type { Db } from './Db';
 import { ADDED_COLUMNS, NOTE_TABLE, PHOTO_TABLE, SCHEMA } from './schema';
 
-type TripRow = Omit<Trip, 'rates'> & { rates: string };
+type TripRow = Omit<Trip, 'rates' | 'members'> & { rates: string; members?: string };
+type ExpenseRow = Omit<Expense, 'splitWith'> & { splitWith: string | null };
+const toExpense = (r: ExpenseRow): Expense => ({ ...r, paidBy: r.paidBy ?? null, splitWith: r.splitWith ? JSON.parse(r.splitWith) : null });
+const expenseCols = 'id, tripId, date, stopId, amount, currency, category, memo, noteId, paidBy, splitWith';
 type LegRow = Omit<Leg, 'options'> & { options: string };
 
 type StopRow = Omit<Stop, 'skipped'> & { skipped: number };
@@ -15,7 +18,7 @@ type PhotoRow = Omit<Photo, 'cover'> & { cover: number };
 const toPhoto = (r: PhotoRow): Photo => ({ ...r, cover: r.cover === 1 });
 const photoCols = 'id, stopId, uri, takenAt, lat, lng, assetId, cover, noteId';
 
-const toTrip = (r: TripRow): Trip => ({ ...r, rates: JSON.parse(r.rates) });
+const toTrip = (r: TripRow): Trip => ({ ...r, rates: JSON.parse(r.rates), members: JSON.parse(r.members ?? '[]') });
 const toStop = (r: StopRow): Stop => ({ ...r, skipped: r.skipped === 1 });
 
 /** 'YYYY-MM-DD' 두 날짜 사이의 모든 날짜 (양끝 포함). */
@@ -134,10 +137,10 @@ export function makeRepo(db: Db, newId: () => Id) {
     },
 
     async createTrip(input: Omit<Trip, 'id' | 'rates'>): Promise<Trip> {
-      const trip: Trip = { ...input, id: newId(), rates: {} };
+      const trip: Trip = { ...input, id: newId(), rates: {}, members: input.members ?? [] };
       await db.run(
-        'INSERT INTO trip (id, name, city, startDate, endDate, baseCurrency, rates) VALUES (?,?,?,?,?,?,?)',
-        [trip.id, trip.name, trip.city, trip.startDate, trip.endDate, trip.baseCurrency, '{}'],
+        'INSERT INTO trip (id, name, city, startDate, endDate, baseCurrency, rates, members) VALUES (?,?,?,?,?,?,?,?)',
+        [trip.id, trip.name, trip.city, trip.startDate, trip.endDate, trip.baseCurrency, '{}', JSON.stringify(trip.members)],
       );
       for (const date of datesBetween(trip.startDate, trip.endDate)) {
         await db.run('INSERT INTO day (id, tripId, date) VALUES (?,?,?)', [newId(), trip.id, date]);
@@ -152,8 +155,8 @@ export function makeRepo(db: Db, newId: () => Id) {
       return rows[0] ? toTrip(rows[0]) : null;
     },
     async updateTrip(t: Trip): Promise<void> {
-      await db.run('UPDATE trip SET name=?, city=?, baseCurrency=?, rates=? WHERE id=?', [
-        t.name, t.city, t.baseCurrency, JSON.stringify(t.rates), t.id,
+      await db.run('UPDATE trip SET name=?, city=?, baseCurrency=?, rates=?, members=? WHERE id=?', [
+        t.name, t.city, t.baseCurrency, JSON.stringify(t.rates), JSON.stringify(t.members ?? []), t.id,
       ]);
     },
     async deleteTrip(id: Id): Promise<void> {
@@ -336,22 +339,19 @@ export function makeRepo(db: Db, newId: () => Id) {
     },
 
     async addExpense(e: Omit<Expense, 'id'>): Promise<Expense> {
-      const exp: Expense = { ...e, noteId: e.noteId ?? null, id: newId() };
-      await db.run(
-        'INSERT INTO expense (id, tripId, date, stopId, amount, currency, category, memo, noteId) VALUES (?,?,?,?,?,?,?,?,?)',
-        [exp.id, exp.tripId, exp.date, exp.stopId, exp.amount, exp.currency, exp.category, exp.memo, exp.noteId],
-      );
+      const exp: Expense = { ...e, noteId: e.noteId ?? null, paidBy: e.paidBy ?? null, splitWith: e.splitWith ?? null, id: newId() };
+      await db.run(`INSERT INTO expense (${expenseCols}) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, [
+        exp.id, exp.tripId, exp.date, exp.stopId, exp.amount, exp.currency, exp.category, exp.memo, exp.noteId, exp.paidBy,
+        exp.splitWith ? JSON.stringify(exp.splitWith) : null,
+      ]);
       return exp;
     },
-    listExpenses(tripId: Id): Promise<Expense[]> {
-      return db.all<Expense>(
-        'SELECT id, tripId, date, stopId, amount, currency, category, memo, noteId FROM expense WHERE tripId = ? ORDER BY date, rowid',
-        [tripId],
-      );
+    async listExpenses(tripId: Id): Promise<Expense[]> {
+      return (await db.all<ExpenseRow>(`SELECT ${expenseCols} FROM expense WHERE tripId = ? ORDER BY date, rowid`, [tripId])).map(toExpense);
     },
     async updateExpense(e: Expense): Promise<void> {
-      await db.run('UPDATE expense SET date=?, stopId=?, amount=?, currency=?, category=?, memo=? WHERE id=?', [
-        e.date, e.stopId, e.amount, e.currency, e.category, e.memo, e.id,
+      await db.run('UPDATE expense SET date=?, stopId=?, amount=?, currency=?, category=?, memo=?, paidBy=?, splitWith=? WHERE id=?', [
+        e.date, e.stopId, e.amount, e.currency, e.category, e.memo, e.paidBy ?? null, e.splitWith ? JSON.stringify(e.splitWith) : null, e.id,
       ]);
     },
     /** 방문지를 다른 날로 옮겼을 때 그 방문지의 비용 날짜도 옮긴다. */

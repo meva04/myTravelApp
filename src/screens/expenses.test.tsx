@@ -99,3 +99,34 @@ test('a rate can be added for a new currency', async () => {
   await fireEvent.press(screen.getByText('저장'));
   expect((await sv.repo.getTrip(trip.id))?.rates).toEqual({ JPY: 9, EUR: 1500 });
 });
+
+test('people can be added; each expense records who paid and who splits it, and the settlement says what I owe', async () => {
+  const { sv, trip } = await setup();
+  await render(withServices(sv, <ExpensesScreen tripId={trip.id} onEditRates={noop} />));
+  for (const n of ['민수', '지영']) {
+    await fireEvent.changeText(await screen.findByPlaceholderText('이름 (예: 민수)'), n);
+    await fireEvent.press(screen.getByText('추가'));
+    await screen.findByText(`${n} ✕`);
+  }
+  // 민수가 3만원 내고 셋이 나눔
+  await fireEvent.changeText(screen.getByPlaceholderText('금액'), '30000');
+  await fireEvent.press(screen.getByLabelText('낸 사람 민수'));
+  await fireEvent.press(screen.getByText('비용 추가'));
+  expect(await screen.findByText('식비 · 민수 냄 · 3명')).toBeTruthy();
+  // 지영이 빠진 1만원: 내가 내고 민수와 둘이 나눔
+  await fireEvent.changeText(screen.getByPlaceholderText('금액'), '10000');
+  await fireEvent.press(screen.getByLabelText('나눌 사람 지영'));
+  await fireEvent.press(screen.getByText('비용 추가'));
+  expect(await screen.findByText('식비 · 나 냄 · 2명')).toBeTruthy();
+
+  // 나: 낸 1만, 몫 1만+5천 → 5천 낼 돈. 민수: 낸 3만, 몫 1만+5천 → 1만5천 받음. 지영: 몫 1만 → 낼 돈
+  expect(screen.getByText('내가 낼 돈')).toBeTruthy();
+  expect(screen.getByText('지영 → 민수 10,000 KRW')).toBeTruthy();
+  expect(screen.getByText('나 → 민수 5,000 KRW')).toBeTruthy();
+
+  // 비용에 들어간 사람은 뺄 수 없다
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  await fireEvent.press(screen.getByLabelText('지영 삭제'));
+  expect(alert).toHaveBeenCalledWith('지영', expect.stringContaining('뺄 수 없어요'));
+  alert.mockRestore();
+});
