@@ -17,7 +17,7 @@ async function setup() {
 
 const stop = (dayId: string, order: number, name: string): Stop => ({
   id: randomUUID(), dayId, order, placeId: null, name, lat: 35.6, lng: 139.7,
-  plannedTime: null, arrivedAt: null, arrivalMethod: null, memo: '',
+  plannedTime: null, arrivedAt: null, arrivalMethod: null, memo: '', planNote: '', skipped: false, legNote: '',
 });
 
 test('createTrip creates one day per date in range, in order', async () => {
@@ -130,4 +130,54 @@ test('concurrent saveLegs calls do not interleave and lose legs', async () => {
   const mk = (id: string): Leg => ({ id, fromStopId: 'x', toStopId: 'y', mode: 'walk', options: [], selectedOptionId: null });
   await Promise.all([repo.saveLegs(days[0].id, [mk('a1'), mk('a2')]), repo.saveLegs(days[0].id, [mk('b1'), mk('b2')])]);
   expect((await repo.listLegs(days[0].id)).map((l) => l.id)).toEqual(['b1', 'b2']);
+});
+
+test('a database from an older version gains the plan note and photo source columns', async () => {
+  const db = makeTestDb();
+  await db.run(`CREATE TABLE stop (
+    id TEXT PRIMARY KEY, dayId TEXT NOT NULL, "order" INTEGER NOT NULL, placeId TEXT, name TEXT NOT NULL,
+    lat REAL NOT NULL, lng REAL NOT NULL, plannedTime TEXT, arrivedAt TEXT, arrivalMethod TEXT, memo TEXT NOT NULL DEFAULT '')`);
+  await db.run(`CREATE TABLE photo (id TEXT PRIMARY KEY, stopId TEXT NOT NULL, uri TEXT NOT NULL, takenAt TEXT NOT NULL, lat REAL, lng REAL)`);
+  await db.run(`INSERT INTO stop (id, dayId, "order", name, lat, lng, memo) VALUES ('old', 'd', 0, '옛 장소', 1, 1, '좋았다')`);
+  const repo = makeRepo(db, randomUUID);
+  await repo.migrate();
+  await repo.migrate(); // 두 번 해도 괜찮아야 한다
+  expect(await repo.getStop('old')).toMatchObject({ memo: '좋았다', planNote: '', skipped: false, legNote: '' });
+  await repo.setStopLegNote('old', '가는 길에 우산 사기');
+  expect((await repo.getStop('old'))?.legNote).toBe('가는 길에 우산 사기');
+  await repo.setStopPlanNote('old', '예약 확인');
+  expect((await repo.getStop('old'))?.planNote).toBe('예약 확인');
+  const p = await repo.addPhoto({ stopId: 'old', uri: 'a.jpg', takenAt: '2027-03-01T00:00:00.000Z', lat: null, lng: null, assetId: 'A1' });
+  expect(await repo.listPhotos('old')).toEqual([p]);
+});
+
+test('travel notes keep their own record, photos and expenses, and old checklist notes are moved over', async () => {
+  const db = makeTestDb();
+  const repo = makeRepo(db, randomUUID);
+  await repo.migrate();
+  const trip = await repo.createTrip({ name: 't', city: 'c', startDate: '2027-03-01', endDate: '2027-03-02', baseCurrency: 'KRW' });
+  const [d1, d2] = await repo.listDays(trip.id);
+  const a = stop(d1.id, 0, 'A');
+  await repo.saveStops(d1.id, [{ ...a, legNote: '[x] 교통카드 구입\n[ ] 현금 2,000엔' }]);
+  await repo.migrate(); // 예전 legNote 가 이동 메모로 옮겨진다
+  const notes = await repo.listNotesForDay(d1.id);
+  expect(notes.map((n) => [n.text, n.done, n.order])).toEqual([['교통카드 구입', true, 0], ['현금 2,000엔', false, 1]]);
+  expect((await repo.getStop(a.id))?.legNote).toBe('');
+  await repo.migrate(); // 두 번 옮기지 않는다
+  expect(await repo.listNotesForDay(d1.id)).toHaveLength(2);
+
+  const n = await repo.addNote(a.id, '우산 사기');
+  expect(n.order).toBe(2);
+  await repo.updateNote(n.id, { done: true, memo: '비가 많이 왔다' });
+  expect(await repo.getNote(n.id)).toMatchObject({ text: '우산 사기', done: true, memo: '비가 많이 왔다' });
+  await repo.addPhoto({ stopId: a.id, noteId: n.id, uri: 'n.jpg', takenAt: '2027-03-01T00:00:00.000Z', lat: null, lng: null });
+  expect((await repo.listNotePhotos(n.id)).map((p) => p.uri)).toEqual(['n.jpg']);
+  expect(await repo.listPhotos(a.id)).toEqual([]); // 장소 사진에는 섞이지 않는다
+  const e = await repo.addExpense({ tripId: trip.id, date: d1.date, stopId: null, noteId: n.id, amount: 5, currency: 'GBP', category: 'shopping', memo: '' });
+  await repo.setExpenseDateForStop(a.id, d2.date); // 장소를 다른 날로 옮기면 메모 비용도 따라간다
+  expect((await repo.listExpenses(trip.id)).find((x) => x.id === e.id)?.date).toBe(d2.date);
+
+  expect(await repo.deleteNote(n.id)).toEqual(['n.jpg']);
+  expect(await repo.getNote(n.id)).toBeNull();
+  expect((await repo.listExpenses(trip.id)).find((x) => x.id === e.id)?.noteId).toBeNull(); // 비용은 남는다
 });

@@ -14,7 +14,7 @@ export async function makeTestServices(over: Partial<Services> = {}): Promise<Se
   await repo.migrate();
   const places: Places = {
     search: async () => [],
-    details: async (placeId) => ({ placeId, name: '', address: '', lat: 0, lng: 0, rating: null, ratingCount: null, openingHours: [], website: null, photoUrls: [] }),
+    details: async (placeId) => ({ placeId, address: '', photoUrls: [], photoAuthors: [] }),
   };
   const routes: Routes = {
     compute: async () => ({ id: randomUUID(), kind: 'default', polyline: [], distanceMeters: 0, durationSeconds: 0 }),

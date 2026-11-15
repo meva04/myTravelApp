@@ -4,6 +4,7 @@ import { t } from '@/i18n/ko';
 import { useServices } from '@/state/ServicesContext';
 import { isDate } from '@/ui/format';
 import { Button, Field, Screen, Txt } from '@/ui/kit';
+import { DateField } from '@/ui/PickerField';
 
 const MAX_DAYS = 90;
 
@@ -31,8 +32,15 @@ export function NewTripScreen({ onDone }: { onDone: (tripId: string) => void }) 
     <Screen>
       <Field placeholder={t('trip.name')} value={name} onChangeText={setName} />
       <Field placeholder={t('trip.city')} value={city} onChangeText={setCity} />
-      <Field placeholder={t('trip.startDate')} value={startDate} onChangeText={setStart} keyboardType="numbers-and-punctuation" />
-      <Field placeholder={t('trip.endDate')} value={endDate} onChangeText={setEnd} keyboardType="numbers-and-punctuation" />
+      <DateField
+        label={t('trip.startDate')}
+        value={startDate}
+        onChange={(v) => {
+          setStart(v);
+          if (!endDate || endDate < v) setEnd(v); // 종료일 달력이 시작일부터 열리게
+        }}
+      />
+      <DateField label={t('trip.endDate')} value={endDate} onChange={setEnd} min={startDate || undefined} />
       <Field placeholder={t('trip.baseCurrency')} value={baseCurrency} onChangeText={setCur} autoCapitalize="characters" />
       {invalid && <Txt kind="soft">{t('trip.invalid')}</Txt>}
       <Button label={t('common.save')} onPress={save} />

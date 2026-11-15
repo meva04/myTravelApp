@@ -34,26 +34,28 @@ test('search with no results returns an empty list', async () => {
   expect(await places.search('zzzz')).toEqual([]);
 });
 
-test('details maps rating, hours, website and photo urls, and is cached', async () => {
-  const fetchFn = jest.fn(async () =>
+test('details asks only for the address and photos (cheapest tier), and is cached', async () => {
+  const fetchFn = jest.fn(async (_url: string, _init: RequestInit) =>
     json({
-      id: 'p1', displayName: { text: '센소지' }, formattedAddress: '도쿄', location: { latitude: 1, longitude: 2 },
-      rating: 4.5, userRatingCount: 1200, websiteUri: 'https://x.jp',
-      regularOpeningHours: { weekdayDescriptions: ['월요일: 06:00~17:00'] },
-      photos: [{ name: 'places/p1/photos/abc' }],
+      id: 'p1', formattedAddress: '일본 도쿄도 다이토구 아사쿠사 2-3-1',
+      photos: [{ name: 'places/p1/photos/abc', authorAttributions: [{ displayName: 'Kim' }] }],
     }),
   );
   const places = makePlaces(fetchFn as unknown as typeof fetch, 'KEY');
   const d = await places.details('p1');
-  expect(d).toMatchObject({ placeId: 'p1', name: '센소지', rating: 4.5, ratingCount: 1200, website: 'https://x.jp', openingHours: ['월요일: 06:00~17:00'] });
-  expect(d.photoUrls).toEqual(['https://places.googleapis.com/v1/places/p1/photos/abc/media?maxWidthPx=800&key=KEY']);
+  expect(d).toEqual({ placeId: 'p1', address: '일본 도쿄도 다이토구 아사쿠사 2-3-1', photoUrls: expect.any(Array), photoAuthors: ['Kim'] });
+  expect(d.photoUrls).toEqual(['https://places.googleapis.com/v1/places/p1/photos/abc/media?maxWidthPx=1200&key=KEY']);
+  const [url, init] = fetchFn.mock.calls[0];
+  expect(url).toContain('languageCode=ko');
+  // 이름(Pro)·별점·영업시간·웹사이트(Enterprise)처럼 비싼 항목은 요청하지 않는다
+  expect((init.headers as Record<string, string>)['X-Goog-FieldMask']).toBe('id,formattedAddress,photos');
   await places.details('p1');
   expect(fetchFn).toHaveBeenCalledTimes(1);
 });
 
 test('details tolerates missing optional fields', async () => {
-  const places = makePlaces((async () => json({ id: 'p1', displayName: { text: 'x' }, location: { latitude: 1, longitude: 2 } })) as unknown as typeof fetch, 'KEY');
-  expect(await places.details('p1')).toMatchObject({ rating: null, ratingCount: null, website: null, openingHours: [], photoUrls: [], address: '' });
+  const places = makePlaces((async () => json({ id: 'p1' })) as unknown as typeof fetch, 'KEY');
+  expect(await places.details('p1')).toMatchObject({ photoUrls: [], photoAuthors: [], address: '' });
 });
 
 test('compute returns a default route option with decoded path', async () => {

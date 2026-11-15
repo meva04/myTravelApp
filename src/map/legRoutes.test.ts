@@ -6,7 +6,7 @@ import { changeLegMode, loadLegRoutes, readLegRoutes } from './legRoutes';
 
 const opt = (id: string): RouteOption => ({ id, kind: 'default', polyline: [{ lat: 1, lng: 1 }, { lat: 2, lng: 2 }], distanceMeters: 100, durationSeconds: 60 });
 const stop = (id: string, dayId: string, order: number): Stop => ({
-  id, dayId, order, placeId: null, name: id, lat: order, lng: order, plannedTime: null, arrivedAt: null, arrivalMethod: null, memo: '',
+  id, dayId, order, placeId: null, name: id, lat: order, lng: order, plannedTime: null, arrivedAt: null, arrivalMethod: null, memo: '', planNote: '', skipped: false, legNote: '',
 });
 
 async function setup() {

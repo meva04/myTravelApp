@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 
+import { pickDate } from '@/testing/pickers';
 import { makeTestServices, withServices } from '@/testing/services';
 
 import { ExpensesScreen } from './ExpensesScreen';
@@ -53,7 +54,7 @@ test('expenses are listed per date and can be deleted', async () => {
 test('a loose expense with a date outside the trip is rejected', async () => {
   const { sv, trip } = await setup();
   await render(withServices(sv, <ExpensesScreen tripId={trip.id} onEditRates={noop} />));
-  await fireEvent.changeText(await screen.findByPlaceholderText('날짜 (예: 2027-03-01)'), '2027-04-09');
+  await pickDate('날짜', '2027-04-09');
   await fireEvent.changeText(screen.getByPlaceholderText('금액'), '3000');
   await fireEvent.press(screen.getByText('비용 추가'));
   expect(await sv.repo.listExpenses(trip.id)).toEqual([]);
@@ -63,7 +64,7 @@ test('a loose expense with a date outside the trip is rejected', async () => {
 test('an expense with no place can be added to a date', async () => {
   const { sv, trip } = await setup();
   await render(withServices(sv, <ExpensesScreen tripId={trip.id} onEditRates={noop} />));
-  await fireEvent.changeText(await screen.findByPlaceholderText('날짜 (예: 2027-03-01)'), '2027-03-02');
+  await pickDate('날짜', '2027-03-02');
   await fireEvent.changeText(screen.getByPlaceholderText('금액'), '3000');
   await fireEvent.press(screen.getByText('비용 추가'));
   expect(await sv.repo.listExpenses(trip.id)).toMatchObject([{ date: '2027-03-02', stopId: null, amount: 3000, currency: 'KRW' }]);

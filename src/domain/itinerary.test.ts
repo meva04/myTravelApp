@@ -2,7 +2,7 @@ import type { Leg, Stop } from './types';
 import { moveToDay, removeStop, reorder, syncLegs } from './itinerary';
 
 const stop = (id: string, order: number, dayId = 'd1'): Stop => ({
-  id, dayId, order, placeId: null, name: id, lat: 0, lng: 0, plannedTime: null, arrivedAt: null, arrivalMethod: null, memo: '',
+  id, dayId, order, placeId: null, name: id, lat: 0, lng: 0, plannedTime: null, arrivedAt: null, arrivalMethod: null, memo: '', planNote: '', skipped: false, legNote: '',
 });
 let n = 0;
 const newId = () => `new${++n}`;

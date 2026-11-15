@@ -1,7 +1,9 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 
 import { OfflineError } from '@/google/errors';
+import { setSkipped } from '@/state/itineraryOps';
+import { pickDate, pickTime } from '@/testing/pickers';
 import { makeTestServices, withServices } from '@/testing/services';
 
 import { AddStopScreen, appendStop } from './AddStopScreen';
@@ -23,8 +25,8 @@ test('a new trip can be saved and then appears in the list', async () => {
   const view = await render(withServices(sv, <NewTripScreen onDone={done} />));
   await fireEvent.changeText(screen.getByPlaceholderText('여행 이름'), '도쿄 봄');
   await fireEvent.changeText(screen.getByPlaceholderText('도시'), '도쿄');
-  await fireEvent.changeText(screen.getByPlaceholderText('시작일 (예: 2027-03-01)'), '2027-03-01');
-  await fireEvent.changeText(screen.getByPlaceholderText('종료일 (예: 2027-03-05)'), '2027-03-03');
+  await pickDate('시작일', '2027-03-01');
+  await pickDate('종료일', '2027-03-03');
   await fireEvent.press(screen.getByText('저장'));
   expect(done).toHaveBeenCalledWith((await sv.repo.listTrips())[0].id);
   await view.unmount();
@@ -37,8 +39,8 @@ test('a trip whose end date is before its start date is rejected', async () => {
   const done = jest.fn();
   await render(withServices(sv, <NewTripScreen onDone={done} />));
   await fireEvent.changeText(screen.getByPlaceholderText('여행 이름'), 'x');
-  await fireEvent.changeText(screen.getByPlaceholderText('시작일 (예: 2027-03-01)'), '2027-03-05');
-  await fireEvent.changeText(screen.getByPlaceholderText('종료일 (예: 2027-03-05)'), '2027-03-01');
+  await pickDate('시작일', '2027-03-05');
+  await pickDate('종료일', '2027-03-01');
   await fireEvent.press(screen.getByText('저장'));
   expect(done).not.toHaveBeenCalled();
   expect(await sv.repo.listTrips()).toEqual([]);
@@ -56,27 +58,69 @@ test('trip home shows one tab per day', async () => {
   expect(screen.getByText('이 날은 아직 비어 있어요')).toBeTruthy();
 });
 
-test('picking a search result adds a stop and keeps legs in sync', async () => {
+test('typing shows matching places; picking opens a form, and nothing is saved until 저장하기', async () => {
   const sv = await makeTestServices();
-  sv.places.search = async () => [
-    { placeId: 'p1', name: '센소지', address: '다이토구', lat: 35.71, lng: 139.79 },
-    { placeId: 'p2', name: '스카이트리', address: '스미다구', lat: 35.71, lng: 139.81 },
-  ];
+  const queries: string[] = [];
+  sv.places.search = async (q) => {
+    queries.push(q);
+    return [
+      { placeId: 'p1', name: '센소지', address: '다이토구', lat: 35.71, lng: 139.79 },
+      { placeId: 'p2', name: '스카이트리', address: '스미다구', lat: 35.71, lng: 139.81 },
+    ].filter((h) => h.name.startsWith(q.slice(0, 1)));
+  };
   const trip = await sv.repo.createTrip({ name: 't', city: 'c', startDate: '2027-03-01', endDate: '2027-03-01', baseCurrency: 'KRW' });
   const [day] = await sv.repo.listDays(trip.id);
   const done = jest.fn();
-  for (const name of ['센소지', '스카이트리']) {
-    const view = await render(withServices(sv, <AddStopScreen dayId={day.id} onDone={done} />));
-    await fireEvent.changeText(screen.getByPlaceholderText('장소 이름으로 검색'), name);
-    await fireEvent.press(screen.getByText('검색'));
-    await fireEvent.press(await screen.findByText(name));
-    await view.unmount();
-  }
+  await render(withServices(sv, <AddStopScreen dayId={day.id} onDone={done} />));
+
+  // 입력하는 대로 결과가 아래에 나온다 (검색 버튼 없이)
+  await fireEvent.changeText(screen.getByPlaceholderText('장소 이름으로 검색'), '센소');
+  await fireEvent.press(await screen.findByText('센소지'));
+  // 바로 추가하지 않고 시간·할 일을 적는 창이 뜬다
+  await pickTime('예정 시간', '09:30');
+  await fireEvent.changeText(screen.getByPlaceholderText(/할 일 추가/), '부적 사기');
+  await fireEvent.press(screen.getByText('추가하기'));
+  expect(await screen.findByText('추가할 장소 1곳')).toBeTruthy();
+  expect(await sv.repo.listStops(day.id)).toEqual([]);
+
+  await fireEvent.changeText(screen.getByPlaceholderText('장소 이름으로 검색'), '스카이');
+  await fireEvent.press(await screen.findByText('스카이트리'));
+  await fireEvent.press(screen.getByText('추가하기'));
+
+  // 담은 장소를 다시 누르면 고칠 수 있다
+  await fireEvent.press(screen.getByText('센소지'));
+  expect(screen.getByText('09:30')).toBeTruthy();
+  await pickTime('예정 시간', '10:00');
+  await fireEvent.press(screen.getByText('수정 완료'));
+
+  await fireEvent.press(screen.getByText('저장하기 (2곳)'));
+  await waitFor(() => expect(done).toHaveBeenCalled());
   const stops = await sv.repo.listStops(day.id);
-  expect(stops.map((s) => [s.name, s.order, s.placeId])).toEqual([['센소지', 0, 'p1'], ['스카이트리', 1, 'p2']]);
+  expect(stops.map((s) => [s.name, s.order, s.placeId, s.plannedTime, s.planNote])).toEqual([
+    ['센소지', 0, 'p1', '10:00', '[ ] 부적 사기'],
+    ['스카이트리', 1, 'p2', null, ''],
+  ]);
   const legs = await sv.repo.listLegs(day.id);
   expect(legs.map((l) => [l.fromStopId, l.toStopId])).toEqual([[stops[0].id, stops[1].id]]);
-  expect(done).toHaveBeenCalledTimes(2);
+  expect(queries).toContain('센소');
+});
+
+test('a planned time can be cleared, and a picked place can be taken out again', async () => {
+  const sv = await makeTestServices();
+  sv.places.search = async () => [{ placeId: 'p1', name: '센소지', address: '다이토구', lat: 35.71, lng: 139.79 }];
+  const trip = await sv.repo.createTrip({ name: 't', city: 'c', startDate: '2027-03-01', endDate: '2027-03-01', baseCurrency: 'KRW' });
+  const [day] = await sv.repo.listDays(trip.id);
+  await render(withServices(sv, <AddStopScreen dayId={day.id} onDone={noop} />));
+  await fireEvent.changeText(screen.getByPlaceholderText('장소 이름으로 검색'), '센소');
+  await fireEvent.press(await screen.findByText('센소지'));
+  await pickTime('예정 시간', '09:30');
+  await fireEvent.press(screen.getByLabelText('예정 시간'));
+  await fireEvent.press(screen.getByText('지우기'));
+  expect(screen.queryByText('09:30')).toBeNull();
+  await fireEvent.press(screen.getByText('추가하기'));
+  await fireEvent.press(await screen.findByText('눌러서 시간·할 일 입력'));
+  await fireEvent.press(screen.getByText('목록에서 빼기'));
+  expect(screen.queryByText(/추가할 장소/)).toBeNull();
 });
 
 test('searching while offline offers to retry when connected', async () => {
@@ -85,8 +129,7 @@ test('searching while offline offers to retry when connected', async () => {
   const trip = await sv.repo.createTrip({ name: 't', city: 'c', startDate: '2027-03-01', endDate: '2027-03-01', baseCurrency: 'KRW' });
   const [day] = await sv.repo.listDays(trip.id);
   await render(withServices(sv, <AddStopScreen dayId={day.id} onDone={noop} />));
-  await fireEvent.changeText(screen.getByPlaceholderText('장소 이름으로 검색'), 'x');
-  await fireEvent.press(screen.getByText('검색'));
+  await fireEvent.changeText(screen.getByPlaceholderText('장소 이름으로 검색'), 'xy');
   expect(await screen.findByText('연결되면 다시 시도')).toBeTruthy();
 });
 
@@ -146,16 +189,20 @@ test('trip home shows the real distance of each leg by its travel mode', async (
   await render(home(sv, trip.id));
   expect(await screen.findByText('1.1km')).toBeTruthy();
   expect(screen.getByText('756m')).toBeTruthy();
-  expect(screen.getAllByText('도보 · 10분 ▾')).toHaveLength(2);
+  expect(screen.getAllByText('10분')).toHaveLength(2);
+  expect(screen.getAllByRole('radio', { name: '도보', selected: true })).toHaveLength(2);
 });
 
 test('changing a leg to transit re-measures it with that mode', async () => {
   const { sv, trip } = await dayWithStops(['A', 'B']);
   sv.routes.compute = async (_from, _to, mode) => ({ id: mode, kind: 'default', polyline: [], distanceMeters: mode === 'transit' ? 2400 : 900, durationSeconds: 600 });
   await render(home(sv, trip.id));
-  await fireEvent.press(await screen.findByText('900m'));
-  await fireEvent.press(screen.getByText('대중교통'));
+  await screen.findByText('900m');
+  // 이동 수단은 펼치지 않아도 늘 보이고, 언제든 다시 바꿀 수 있다
+  await fireEvent.press(screen.getByRole('radio', { name: '대중교통' }));
   expect(await screen.findByText('2.4km')).toBeTruthy();
+  await fireEvent.press(screen.getByRole('radio', { name: '도보' }));
+  expect(await screen.findByText('900m')).toBeTruthy();
 });
 
 test('tapping a stop selects it, tapping it again opens it', async () => {
@@ -174,4 +221,67 @@ test('the add button adds a stop to the shown day', async () => {
   await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={add} onOpenMap={noop} onOpenStop={noop} onExpenses={noop} onSettings={noop} />));
   await fireEvent.press(await screen.findByLabelText('장소 추가'));
   expect(add).toHaveBeenCalledWith(days[0].id);
+});
+
+test('hidden places leave the itinerary and its legs, and can be put back', async () => {
+  const { sv, trip, days } = await dayWithStops(['A', 'B', 'C']);
+  const [, b] = await sv.repo.listStops(days[0].id);
+  await setSkipped(sv, b, true);
+  expect((await sv.repo.listLegs(days[0].id)).length).toBe(1); // A → C 한 구간만
+  await render(home(sv, trip.id));
+  expect(await screen.findByText('숨긴 장소 1곳 ▾')).toBeTruthy();
+  expect(screen.queryByText('B')).toBeNull();
+  await fireEvent.press(screen.getByText('숨긴 장소 1곳 ▾'));
+  await fireEvent.press(await screen.findByText('다시 일정에 넣기'));
+  expect(await screen.findByText('B')).toBeTruthy();
+  expect(screen.queryByText(/숨긴 장소/)).toBeNull();
+  expect((await sv.repo.listLegs(days[0].id)).length).toBe(2);
+});
+
+test('travel notes are separate cards between two places; each can be checked off and opened', async () => {
+  const { sv, trip, days } = await dayWithStops(['A', 'B', 'C']);
+  const open = jest.fn();
+  await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={noop} onOpenMap={noop} onOpenStop={noop} onOpenNote={open} onExpenses={noop} onSettings={noop} />));
+  const adds = await screen.findAllByText('+ 메모');
+  expect(adds).toHaveLength(2); // A→B, B→C 사이마다 하나
+  await fireEvent.press(adds[0]);
+  await fireEvent.changeText(screen.getByPlaceholderText(/가는 길에 할 일/), '교통카드 구입');
+  await fireEvent.changeText(screen.getByPlaceholderText(/가는 길에 할 일/), '현금 2,000엔');
+  await fireEvent.press(screen.getByText('추가하기'));
+  expect(await screen.findByText('교통카드 구입')).toBeTruthy();
+  expect(screen.getAllByLabelText(/^이동 메모 /)).toHaveLength(2); // 하나하나가 각각의 카드
+  const [a] = await sv.repo.listStops(days[0].id);
+  const notes = await sv.repo.listNotesForDay(days[0].id);
+  expect(notes.map((n) => [n.stopId, n.text, n.done])).toEqual([[a.id, '교통카드 구입', false], [a.id, '현금 2,000엔', false]]);
+
+  // 이동 중에 바로 체크
+  await fireEvent.press(screen.getByRole('checkbox', { name: '교통카드 구입' }));
+  await waitFor(async () => expect((await sv.repo.getNote(notes[0].id))?.done).toBe(true));
+
+  // 카드를 누르면 그 메모 화면이 열린다
+  await fireEvent.press(screen.getByLabelText('이동 메모 현금 2,000엔'));
+  expect(open).toHaveBeenCalledWith(notes[1].id);
+});
+
+test('plan items can be checked off right from the itinerary', async () => {
+  const { sv, trip, days } = await dayWithStops(['A']);
+  const [a] = await sv.repo.listStops(days[0].id);
+  await sv.repo.setStopPlanNote(a.id, '[ ] 예약 확인\n[ ] 우산');
+  await render(home(sv, trip.id));
+  await fireEvent.press(await screen.findByRole('checkbox', { name: '우산' }));
+  await waitFor(async () => expect((await sv.repo.getStop(a.id))?.planNote).toBe('[ ] 예약 확인\n[x] 우산'));
+  expect(await screen.findByRole('checkbox', { name: '우산', checked: true })).toBeTruthy();
+});
+
+test('each leg opens Google Maps: navigation for walking/driving, transit options for transit', async () => {
+  const { sv, trip } = await dayWithStops(['A', 'B']);
+  const opened: string[] = [];
+  await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={noop} onOpenMap={noop} onOpenStop={noop} onExpenses={noop} onSettings={noop} openUrl={(u) => void opened.push(u)} />));
+  await fireEvent.press(await screen.findByText('↗ 구글 지도 길 안내'));
+  expect(opened[0]).toContain('travelmode=walking');
+  expect(opened[0]).toContain('dir_action=navigate');
+  await fireEvent.press(screen.getByRole('radio', { name: '대중교통' }));
+  await fireEvent.press(await screen.findByText('↗ 구글 지도 대중교통'));
+  expect(opened[1]).toContain('travelmode=transit');
+  expect(opened[1]).not.toContain('dir_action');
 });

@@ -38,3 +38,14 @@ jest.mock('@gorhom/bottom-sheet', () => {
   const BottomSheet = (props) => React.createElement(View, null, props.children);
   return { __esModule: true, default: BottomSheet, BottomSheetScrollView: ScrollView };
 });
+// iOS 날짜·시간 선택기 대체품: 값을 글자로 넣으면 그 날짜로 바뀐다 (예: '2027-03-02T09:30').
+jest.mock('@expo/ui/swift-ui', () => {
+  const React = require('react');
+  const { TextInput, View } = require('react-native');
+  return {
+    Host: (props) => React.createElement(View, null, props.children),
+    DatePicker: (props) =>
+      React.createElement(TextInput, { accessibilityLabel: `${props.title} 선택기`, onChangeText: (v) => props.onDateChange?.(new Date(v)) }),
+  };
+});
+jest.mock('@expo/ui/swift-ui/modifiers', () => ({ datePickerStyle: () => ({}), labelsHidden: () => ({}) }));

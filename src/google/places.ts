@@ -3,12 +3,16 @@ import type { LatLng } from '@/domain/types';
 import { callJson } from './errors';
 
 export type PlaceHit = { placeId: string; name: string; address: string; lat: number; lng: number };
-export type PlaceDetails = PlaceHit & {
-  rating: number | null;
-  ratingCount: number | null;
-  openingHours: string[];
-  website: string | null;
+/**
+ * 장소 화면 머리에 쓰는 정보: 주소와 사진뿐이다. 요금이 가장 싼 등급(Essentials)에 머물도록
+ * 이름(Pro)·별점·영업시간·웹사이트(Enterprise)는 받지 않는다. 이름과 위치는 장소를 추가할 때 저장해 둔 것을 쓴다.
+ */
+export type PlaceDetails = {
+  placeId: string;
+  address: string;
   photoUrls: string[];
+  /** 사진마다 구글 약관상 표시해야 하는 촬영자 이름 */
+  photoAuthors: string[];
 };
 
 type ApiPlace = {
@@ -16,11 +20,7 @@ type ApiPlace = {
   displayName?: { text?: string };
   formattedAddress?: string;
   location?: { latitude: number; longitude: number };
-  rating?: number;
-  userRatingCount?: number;
-  websiteUri?: string;
-  regularOpeningHours?: { weekdayDescriptions?: string[] };
-  photos?: { name: string }[];
+  photos?: { name: string; authorAttributions?: { displayName?: string }[] }[];
 };
 
 const BASE = 'https://places.googleapis.com/v1';
@@ -60,17 +60,14 @@ export function makePlaces(fetchFn: typeof fetch, apiKey: string, now: () => num
       if (hit && now() - hit.at < CACHE_MS) return hit.value;
       const p = await callJson<ApiPlace>(fetchFn, `${BASE}/places/${encodeURIComponent(placeId)}?languageCode=ko`, {
         method: 'GET',
-        headers: headers(
-          'id,displayName,formattedAddress,location,rating,userRatingCount,regularOpeningHours.weekdayDescriptions,websiteUri,photos',
-        ),
+        headers: headers('id,formattedAddress,photos'),
       });
+      const photos = (p.photos ?? []).slice(0, 3);
       const value: PlaceDetails = {
-        ...toHit(p),
-        rating: p.rating ?? null,
-        ratingCount: p.userRatingCount ?? null,
-        openingHours: p.regularOpeningHours?.weekdayDescriptions ?? [],
-        website: p.websiteUri ?? null,
-        photoUrls: (p.photos ?? []).slice(0, 3).map((ph) => `${BASE}/${ph.name}/media?maxWidthPx=800&key=${apiKey}`),
+        placeId: p.id,
+        address: p.formattedAddress ?? '',
+        photoUrls: photos.map((ph) => `${BASE}/${ph.name}/media?maxWidthPx=1200&key=${apiKey}`),
+        photoAuthors: photos.map((ph) => ph.authorAttributions?.map((a) => a.displayName).filter(Boolean).join(', ') ?? ''),
       };
       cache.set(placeId, { at: now(), value });
       return value;

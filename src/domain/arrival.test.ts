@@ -3,7 +3,7 @@ import { distanceMeters, markArrived, pickRegions } from './arrival';
 
 const stop = (i: number, p: Partial<Stop> = {}): Stop => ({
   id: `s${i}`, dayId: 'd', order: i, placeId: null, name: `s${i}`, lat: 35 + i * 0.01, lng: 139,
-  plannedTime: null, arrivedAt: null, arrivalMethod: null, memo: '', ...p,
+  plannedTime: null, arrivedAt: null, arrivalMethod: null, memo: '', planNote: '', skipped: false, legNote: '', ...p,
 });
 
 test('distance between Seoul City Hall and Gwanghwamun is about 1.07km', () => {

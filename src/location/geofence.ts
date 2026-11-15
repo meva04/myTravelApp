@@ -6,16 +6,14 @@ import * as TaskManager from 'expo-task-manager';
 import { emitDataChanged } from '@/state/events';
 import { getServices } from '@/state/services';
 
+import { localToday } from './clock';
 import { handleEnter, refreshGeofences as refreshCore, type GeofenceDeps } from './geofenceCore';
 import { getLocationAccess } from './permissions';
+import { notifyNow } from './prompts';
 
 export const GEOFENCE_TASK = 'tripnote-arrival';
 
-/** 기기 현지 날짜 'YYYY-MM-DD' */
-export function localToday(d = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
+export { localToday };
 
 async function deps(): Promise<GeofenceDeps> {
   const { repo } = await getServices();
@@ -34,10 +32,7 @@ async function deps(): Promise<GeofenceDeps> {
     stop: async () => {
       if (await Location.hasStartedGeofencingAsync(GEOFENCE_TASK)) await Location.stopGeofencingAsync(GEOFENCE_TASK);
     },
-    notify: async (title, body) => {
-      await Notifications.scheduleNotificationAsync({ content: { title, body }, trigger: null });
-    },
-    now: () => new Date().toISOString(),
+    notify: notifyNow,
     today: () => localToday(),
   };
 }
@@ -63,5 +58,5 @@ TaskManager.defineTask<GeofenceEvent>(GEOFENCE_TASK, async ({ data, error }) => 
   if (data.eventType !== Location.LocationGeofencingEventType.Enter) return;
   if (!data.region.identifier) return;
   await handleEnter(await deps(), data.region.identifier);
-  emitDataChanged(); // 열려 있는 화면이 있으면 스탬프를 바로 보여준다
+  emitDataChanged();
 });

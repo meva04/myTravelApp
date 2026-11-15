@@ -13,7 +13,7 @@ export function distanceMeters(a: LatLng, b: LatLng): number {
 
 /** 감시할 장소 고르기: 아직 도착하지 않은 곳만, 현재 위치에서 가까운 순으로 최대 max 곳. */
 export function pickRegions(stops: Stop[], here: LatLng | null, max = 20, radius = 150): GeofenceRegion[] {
-  const pending = stops.filter((s) => s.arrivedAt === null);
+  const pending = stops.filter((s) => s.arrivedAt === null && !s.skipped);
   pending.sort((a, b) => (here ? distanceMeters(here, a) - distanceMeters(here, b) : a.order - b.order));
   return pending.slice(0, max).map((s) => ({ identifier: s.id, latitude: s.lat, longitude: s.lng, radius }));
 }

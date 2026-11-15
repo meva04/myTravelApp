@@ -54,6 +54,7 @@ export default function TripHome() {
       onAddStop={(dayId) => router.push({ pathname: '/trip/[tripId]/day/[dayId]/add', params: { tripId, dayId } })}
       onOpenMap={(dayId) => router.push({ pathname: '/trip/[tripId]/day/[dayId]', params: { tripId, dayId } })}
       onOpenStop={(stopId) => router.push({ pathname: '/trip/[tripId]/stop/[stopId]', params: { tripId, stopId } })}
+      onOpenNote={(noteId) => router.push({ pathname: '/trip/[tripId]/note/[noteId]', params: { tripId, noteId } })}
       onExpenses={() => router.push({ pathname: '/trip/[tripId]/expenses', params: { tripId } })}
       onSettings={() => router.push({ pathname: '/trip/[tripId]/settings', params: { tripId } })}
     />

@@ -22,8 +22,9 @@ export function moveToDay(stop: Stop, fromStops: Stop[], toStops: Stop[], toDayI
   };
 }
 
-/** 이웃한 방문지 쌍마다 구간 하나. 이미 있는 쌍은 받아둔 경로를 그대로 둔다. */
-export function syncLegs(stops: Stop[], legs: Leg[], newId: () => Id): Leg[] {
+/** 이웃한 방문지 쌍마다 구간 하나. 이미 있는 쌍은 받아둔 경로를 그대로 둔다. 숨긴 장소는 건너뛴다. */
+export function syncLegs(all: Stop[], legs: Leg[], newId: () => Id): Leg[] {
+  const stops = all.filter((s) => !s.skipped);
   const byPair = new Map(legs.map((l) => [`${l.fromStopId}>${l.toStopId}`, l]));
   const out: Leg[] = [];
   for (let i = 0; i + 1 < stops.length; i++) {
@@ -34,4 +35,10 @@ export function syncLegs(stops: Stop[], legs: Leg[], newId: () => Id): Leg[] {
     );
   }
   return out;
+}
+
+/** 보이는 방문지의 새 순서에 숨긴 방문지를 뒤에 붙여 그날 전체 목록을 만든다. */
+export function withHidden(visible: Stop[], all: Stop[]): Stop[] {
+  const hidden = all.filter((s) => s.skipped && !visible.some((v) => v.id === s.id));
+  return renumber([...visible, ...hidden]);
 }

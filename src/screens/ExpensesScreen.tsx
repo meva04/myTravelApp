@@ -7,7 +7,8 @@ import { t } from '@/i18n/ko';
 import { useLoad, useServices } from '@/state/ServicesContext';
 import { ExpenseForm } from '@/ui/ExpenseForm';
 import { formatMoney, isDate } from '@/ui/format';
-import { Button, Card, Chip, Field, Row, Screen, Txt } from '@/ui/kit';
+import { Button, Card, Chip, Row, Screen, Txt } from '@/ui/kit';
+import { DateField } from '@/ui/PickerField';
 
 export function ExpensesScreen({ tripId, onEditRates, refreshKey = 0, today }: { tripId: string; onEditRates: () => void; refreshKey?: number; today?: string }) {
   const { repo } = useServices();
@@ -94,7 +95,7 @@ export function ExpensesScreen({ tripId, onEditRates, refreshKey = 0, today }: {
 
       <Card>
         <Txt kind="heading">{t('expense.addLoose')}</Txt>
-        <Field placeholder={t('expense.date')} value={looseDate} onChangeText={setDate} keyboardType="numbers-and-punctuation" />
+        <DateField label={t('expense.date')} value={looseDate} onChange={setDate} min={trip.startDate} max={trip.endDate} />
         {badDate && <Txt kind="soft">{t('expense.badDate')}</Txt>}
         <ExpenseForm
           defaultCurrency={base}

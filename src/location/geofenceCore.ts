@@ -1,7 +1,8 @@
 import type { Repo } from '@/db/repo';
 import { pickRegions, type GeofenceRegion } from '@/domain/arrival';
 import type { Id, LatLng, Stop } from '@/domain/types';
-import { t } from '@/i18n/ko';
+
+import { arrivalNotice, type PromptNotice } from './promptsCore';
 
 export type LocationAccess = 'always' | 'whenInUse' | 'denied';
 
@@ -11,8 +12,7 @@ export type GeofenceDeps = {
   getPosition: () => Promise<LatLng | null>;
   start: (regions: GeofenceRegion[]) => Promise<void>;
   stop: () => Promise<void>;
-  notify: (title: string, body: string) => Promise<void>;
-  now: () => string; // ISO
+  notify: (notice: PromptNotice) => Promise<void>;
   today: () => string; // 'YYYY-MM-DD' (기기 현지 날짜)
 };
 
@@ -46,17 +46,18 @@ export async function refreshGeofences(deps: GeofenceDeps): Promise<void> {
   else await deps.start(regions);
 }
 
-/** 감시 중인 장소에 들어왔을 때. 오늘 일정의 첫 도착만 기록하고 알린다. */
+/**
+ * 감시 중인 장소에 들어왔을 때. 바로 도착으로 기록하지 않고 "도착하셨나요?" 하고 묻는다
+ * (근처를 지나가기만 할 수도 있으므로). 도착 기록은 사용자가 "네" 라고 답할 때 한다.
+ */
 export async function handleEnter(deps: GeofenceDeps, stopId: Id): Promise<void> {
   const stop = await deps.repo.getStop(stopId);
-  if (!stop) return;
+  if (!stop || stop.arrivedAt || stop.skipped) return;
   const day = await deps.repo.getDay(stop.dayId);
-  if (day?.date !== deps.today()) return; // 내일 일정을 미리 지나친 것은 도착이 아니다
-  if (!(await deps.repo.markStopArrived(stopId, deps.now(), 'auto'))) return;
+  if (!day || day.date !== deps.today()) return; // 다른 날 일정을 미리 지나친 것은 도착이 아니다
   try {
-    await deps.notify(t('arrival.notifyTitle', { name: stop.name }), t('arrival.notifyBody'));
+    await deps.notify(arrivalNotice(stop, day.tripId));
   } catch {
-    // 알림을 못 보내도 도착 기록과 다음 감시 등록은 이어져야 한다.
+    // 알림을 못 보내도 감시는 이어진다. 장소 화면에서 직접 도착을 누를 수 있다.
   }
-  await refreshGeofences(deps);
 }

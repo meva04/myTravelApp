@@ -31,7 +31,8 @@ const SNAP = ['18%', '50%', '88%'];
 
 export function DayMapScreen({ dayId, refreshKey = 0, getMe, onOpenStop, onAddStop }: Props) {
   const sv = useServices();
-  const { stops, legs, status, loaded, setMode, retry } = useLegRoutes(dayId, refreshKey);
+  const { stops: allStops, legs, status, loaded, setMode, retry } = useLegRoutes(dayId, refreshKey);
+  const stops = useMemo(() => allStops.filter((s) => !s.skipped), [allStops]);
   const map = useRef<DayMapHandle>(null);
   const [region, setRegion] = useState<Region | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
