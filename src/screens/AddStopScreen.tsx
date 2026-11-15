@@ -1,18 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { serializeChecklist, type CheckItem } from '@/domain/checklist';
-import type { SavedPlace, Stop } from '@/domain/types';
+import type { Stop } from '@/domain/types';
 import { GoogleApiError, OfflineError } from '@/google/errors';
-import type { PlaceHit } from '@/google/places';
+import { isMapsUrl, type PlaceHit } from '@/google/places';
 import { t } from '@/i18n/ko';
 import { addStops, type NewPlace } from '@/state/itineraryOps';
 import type { Services } from '@/state/services';
-import { useLoad, useServices } from '@/state/ServicesContext';
+import { useServices } from '@/state/ServicesContext';
 import { colors, fonts, radius, space } from '@/theme/tokens';
-import { importSavedFiles } from '@/travel/importSaved';
 import { Checklist, withDraft } from '@/ui/Checklist';
-import { Button, Chip, Field, Row, Txt } from '@/ui/kit';
+import { Button, Field, Txt } from '@/ui/kit';
 import { TimeField } from '@/ui/PickerField';
 import { KindIcon } from '@/ui/PlaceVisual';
 import { SheetModal } from '@/ui/SheetModal';
@@ -27,7 +26,7 @@ export async function appendStop(sv: Services, dayId: string, place: NewPlace, e
   return (await appendStops(sv, dayId, [{ place, extra }]))[0];
 }
 
-type Status = 'idle' | 'loading' | 'offline' | 'error' | 'none';
+type Status = 'idle' | 'loading' | 'link' | 'linkNone' | 'offline' | 'error' | 'none';
 /** 시간·할 일을 적는 중인 장소 */
 type Editing = { hit: PlaceHit; time: string; todos: CheckItem[]; typing: string };
 
@@ -50,14 +49,9 @@ function useKeyboardHeight(): number {
 const DEBOUNCE_MS = 400;
 const MIN_CHARS = 2;
 
-type Props = {
-  dayId: string;
-  onDone: () => void;
-  /** 구글 테이크아웃 파일 고르기 (기기에서만) */
-  pickSavedFiles?: () => Promise<{ name: string; text: string }[]>;
-};
+type Props = { dayId: string; onDone: () => void };
 
-export function AddStopScreen({ dayId, onDone, pickSavedFiles }: Props) {
+export function AddStopScreen({ dayId, onDone }: Props) {
   const sv = useServices();
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<PlaceHit[]>([]);
@@ -65,15 +59,30 @@ export function AddStopScreen({ dayId, onDone, pickSavedFiles }: Props) {
   const [added, setAdded] = useState<Stop[]>([]);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [saving, setSaving] = useState(false);
-  const [showSaved, setShowSaved] = useState(false);
-  const [importing, setImporting] = useState(false);
   const seq = useRef(0);
   const keyboard = useKeyboardHeight();
-  const { data: saved, reload: reloadSaved } = useLoad(() => sv.repo.listSavedPlaces(), []);
 
+  const open = (hit: PlaceHit) => setEditing({ hit, time: '', todos: [], typing: '' });
   const search = async (q: string) => {
     const mine = ++seq.current; // 늦게 도착한 옛 검색 결과로 덮어쓰지 않게
     if (q.trim().length < MIN_CHARS) return;
+    // 구글 지도에서 복사한 링크면 그 장소를 바로 찾아 입력 창을 연다
+    if (isMapsUrl(q)) {
+      setStatus('link');
+      setHits([]);
+      try {
+        const hit = await sv.places.fromMapsUrl(q);
+        if (mine !== seq.current) return;
+        if (!hit) return setStatus('linkNone');
+        setStatus('idle');
+        setHits([hit]);
+        open(hit);
+      } catch (e) {
+        if (mine !== seq.current) return;
+        setStatus(e instanceof OfflineError ? 'offline' : 'linkNone');
+      }
+      return;
+    }
     setStatus('loading');
     try {
       const stops = await sv.repo.listStops(dayId);
@@ -100,10 +109,6 @@ export function AddStopScreen({ dayId, onDone, pickSavedFiles }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
-  const open = (hit: PlaceHit) => setEditing({ hit, time: '', todos: [], typing: '' });
-  const openSaved = (p: SavedPlace) =>
-    setEditing({ hit: { placeId: p.placeId ?? '', name: p.name, address: p.address, lat: p.lat, lng: p.lng }, time: '', todos: p.note ? [{ id: 'n', text: p.note, done: false }] : [], typing: '' });
-
   // "추가하기" 를 누르면 바로 일정에 들어간다 (따로 저장하기 단계가 없다).
   const add = async () => {
     if (!editing || saving) return;
@@ -123,26 +128,7 @@ export function AddStopScreen({ dayId, onDone, pickSavedFiles }: Props) {
     }
   };
 
-  const importGoogle = async () => {
-    if (!pickSavedFiles || importing) return;
-    setImporting(true);
-    try {
-      const files = await pickSavedFiles();
-      if (!files.length) return;
-      const r = await importSavedFiles(sv, files);
-      reloadSaved();
-      setShowSaved(true);
-      Alert.alert(t('saved.imported', { n: r.added }), r.missing ? t('saved.missing', { n: r.missing }) : undefined);
-    } catch {
-      Alert.alert(t('saved.importFailed'), t('saved.howTo'));
-    } finally {
-      setImporting(false);
-    }
-  };
-
   const shownHits = query.trim().length >= MIN_CHARS ? hits : [];
-  const q = query.trim().toLowerCase();
-  const shownSaved = (saved ?? []).filter((p) => !q || p.name.toLowerCase().includes(q) || p.address.toLowerCase().includes(q));
   const addedIds = new Set(added.map((s) => s.placeId).filter(Boolean));
 
   return (
@@ -157,11 +143,7 @@ export function AddStopScreen({ dayId, onDone, pickSavedFiles }: Props) {
           autoFocus
           clearButtonMode="while-editing"
         />
-        <Row style={{ flexWrap: 'wrap' }}>
-          <Chip label={t('saved.mine', { n: saved?.length ?? 0 })} selected={showSaved} onPress={() => setShowSaved(!showSaved)} />
-          {pickSavedFiles && <Chip label={importing ? t('common.loading') : t('saved.importGoogle')} onPress={() => void importGoogle()} />}
-          <Chip label={t('saved.naverSoon')} onPress={() => Alert.alert(t('saved.naverSoon'), t('saved.naverBody'))} />
-        </Row>
+        {query.trim() === '' && <Txt kind="small">{t('search.linkHint')}</Txt>}
       </View>
       <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
         {added.length > 0 && (
@@ -173,25 +155,9 @@ export function AddStopScreen({ dayId, onDone, pickSavedFiles }: Props) {
           </View>
         )}
 
-        {showSaved && (
-          <View style={{ gap: 0 }}>
-            <Txt kind="soft">{shownSaved.length ? t('saved.title') : t('saved.empty')}</Txt>
-            {shownSaved.length === 0 && <Txt kind="small">{t('saved.howTo')}</Txt>}
-            {shownSaved.map((p) => (
-              <Pressable key={p.id} accessibilityRole="button" onPress={() => openSaved(p)} style={({ pressed }) => [styles.hit, pressed && { opacity: 0.7 }]}>
-                <Text style={styles.star}>★</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.name}>{p.name}</Text>
-                  <Text style={styles.sub} numberOfLines={1}>
-                    {[p.list, p.address].filter(Boolean).join(' · ')}
-                  </Text>
-                </View>
-              </Pressable>
-            ))}
-          </View>
-        )}
-
         {status === 'loading' && <Txt kind="soft">{t('common.loading')}</Txt>}
+        {status === 'link' && <Txt kind="soft">{t('search.linkLoading')}</Txt>}
+        {status === 'linkNone' && <Txt kind="soft">{t('search.linkNone')}</Txt>}
         {status === 'none' && shownHits.length === 0 && query.trim().length >= MIN_CHARS && <Txt kind="soft">{t('search.none')}</Txt>}
         {status === 'error' && <Txt kind="soft">{t('search.error')}</Txt>}
         {status === 'offline' && <Button kind="ghost" label={t('common.retryWhenOnline')} onPress={() => void search(query)} />}
@@ -205,7 +171,13 @@ export function AddStopScreen({ dayId, onDone, pickSavedFiles }: Props) {
                 {h.address}
               </Text>
             </View>
-            {addedIds.has(h.placeId) && <Text style={styles.badge}>{t('add.inList')}</Text>}
+            {addedIds.has(h.placeId) ? (
+              <Text style={styles.badge}>{t('add.inList')}</Text>
+            ) : h.category ? (
+              <Text style={styles.category} numberOfLines={1}>
+                {h.category}
+              </Text>
+            ) : null}
           </Pressable>
         ))}
       </ScrollView>
@@ -245,7 +217,7 @@ const styles = StyleSheet.create({
   name: { fontSize: fonts.size.md, fontWeight: '600', color: colors.ink },
   sub: { fontSize: fonts.size.sm, color: colors.inkSoft, marginTop: 2 },
   badge: { fontSize: fonts.size.xs, color: colors.ok, fontWeight: '700' },
-  star: { fontSize: fonts.size.md, color: '#D08C2E' },
+  category: { maxWidth: 110, fontSize: fonts.size.xs, color: colors.inkSoft, paddingVertical: 2, paddingHorizontal: space.sm, borderRadius: radius.pill, backgroundColor: colors.accentSoft, overflow: 'hidden' },
   addedName: { fontSize: fonts.size.sm, color: colors.ok, fontWeight: '600' },
   footer: { position: 'absolute', left: space.lg, right: space.lg, bottom: space.xxl, borderRadius: radius.md },
 });

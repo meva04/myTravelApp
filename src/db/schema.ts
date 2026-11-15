@@ -38,10 +38,6 @@ export const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS booking (
     id TEXT PRIMARY KEY, tripId TEXT NOT NULL REFERENCES trip(id) ON DELETE CASCADE,
     kind TEXT NOT NULL, data TEXT NOT NULL)`,
-  `CREATE TABLE IF NOT EXISTS saved_place (
-    id TEXT PRIMARY KEY, source TEXT NOT NULL, list TEXT NOT NULL, name TEXT NOT NULL,
-    address TEXT NOT NULL DEFAULT '', lat REAL NOT NULL, lng REAL NOT NULL, placeId TEXT,
-    note TEXT NOT NULL DEFAULT '')`,
 ];
 
 /** 예전 버전에서 만든 DB 에 나중에 생긴 칸을 더한다: [표, 칸, 정의] */

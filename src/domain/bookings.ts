@@ -42,6 +42,16 @@ export function timeSlot(times: (string | null)[], time: string | null): number 
 export function bookingLine(b: Booking, stopName: string): string {
   if (b.kind === 'lodging') return [b.confirmation && `예약 ${b.confirmation}`].filter(Boolean).join(' · ');
   const departing = b.from?.name === stopName;
-  const parts = [b.carrier, b.title, departing ? b.terminal && `터미널 ${b.terminal}` : null, departing ? b.gate && `게이트 ${b.gate}` : null, b.car && `${b.car}호차`, b.seat && `좌석 ${b.seat}`];
+  const parts = [
+    b.carrier,
+    b.title,
+    departing && b.status && b.status !== '출발' ? b.status : null,
+    departing && b.estimated && b.estimated !== b.departTime ? `변경 ${b.estimated}` : null,
+    departing ? b.terminal && `터미널 ${b.terminal}` : null,
+    departing ? b.checkin && `카운터 ${b.checkin}` : null,
+    departing ? b.gate && `게이트 ${b.gate}` : null,
+    b.car && `${b.car}호차`,
+    b.seat && `좌석 ${b.seat}`,
+  ];
   return parts.filter(Boolean).join(' · ');
 }

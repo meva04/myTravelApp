@@ -1,8 +1,8 @@
 import { bookingStops } from '@/domain/bookings';
 import type { Booking } from '@/domain/types';
 
-import { makeFlights, splitLocal } from './flights';
-import { coordsFromUrl, parseTakeoutCsv, parseTakeoutJson } from './savedPlaces';
+import { airlineOf } from './airlines';
+import { makeFlights } from './flights';
 
 const hotel = { name: '호텔 그레이스리', placeId: 'h1', lat: 35.69, lng: 139.7 };
 
@@ -28,40 +28,31 @@ test('a flight adds its departure and arrival airports on their days, at their t
   expect(out[0]).toMatchObject({ date: '2027-03-01', time: '11:20', kind: 'airport', position: 'time' });
 });
 
-test('flight lookup reads airports, local times, gate and aircraft', async () => {
-  expect(splitLocal('2027-03-01 10:05+09:00')).toEqual(['2027-03-01', '10:05']);
-  const fetchFn = jest.fn(async () => ({
-    ok: true, status: 200,
-    json: async () => [{
-      number: 'KE 703', status: 'Expected', airline: { name: 'Korean Air' }, aircraft: { model: 'Boeing 787-9' },
-      departure: { airport: { iata: 'ICN', municipalityName: 'Seoul', location: { lat: 37.46, lon: 126.44 } }, scheduledTime: { local: '2027-03-01 09:00+09:00' }, terminal: '2', gate: '250' },
-      arrival: { airport: { iata: 'NRT', municipalityName: 'Tokyo', location: { lat: 35.77, lon: 140.39 } }, scheduledTime: { local: '2027-03-01 11:20+09:00' } },
-    }],
-  }));
-  const info = await makeFlights(fetchFn as unknown as typeof fetch, 'K').lookup('ke 703', '2027-03-01');
-  expect(info).toMatchObject({ title: 'KE703', carrier: 'Korean Air', vehicle: 'Boeing 787-9', gate: '250', terminal: '2', departTime: '09:00', arriveTime: '11:20' });
-  expect(info?.from).toMatchObject({ code: 'ICN', lat: 37.46, lng: 126.44 });
-  await expect(makeFlights(fetchFn as unknown as typeof fetch, '').lookup('KE703', '2027-03-01')).rejects.toThrow('no flight api key');
+test('a flight number shows its airline from a built-in table', () => {
+  expect(airlineOf('ke 703')).toEqual({ code: 'KE', name: '대한항공' });
+  expect(airlineOf('7C1101')?.name).toBe('제주항공');
+  expect(airlineOf('XX1')).toBeNull();
 });
 
-test('Google Takeout saved places are read from the GeoJSON and from list CSVs', () => {
-  const json = JSON.stringify({
-    type: 'FeatureCollection',
-    features: [
-      { geometry: { coordinates: [139.79, 35.71] }, properties: { google_maps_url: 'http://maps.google.com/?cid=1', location: { name: '센소지', address: '도쿄 다이토구' } } },
-      { geometry: { coordinates: [0, 0] }, properties: { google_maps_url: 'https://www.google.com/maps/search/?q=35.66,139.70', location: { name: '시부야 스카이' } } },
-    ],
+test('today at Incheon: departures give terminal, check-in counters, gate and delays (free public data)', async () => {
+  const urls: string[] = [];
+  const fetchFn = jest.fn(async (url: string) => {
+    urls.push(url);
+    const dep = url.includes('getPassengerDeparturesOdp');
+    return {
+      ok: true, status: 200,
+      json: async () => ({
+        response: { body: { items: dep ? [{ flightId: 'KE703', airline: '대한항공', airport: '나리타', airportCode: 'NRT', scheduleDateTime: '0900', estimatedDateTime: '0935', terminalId: 'P03', gatenumber: '250', chkinrange: 'E01-E06', remark: '지연' }] : [] } },
+      }),
+    };
   });
-  expect(parseTakeoutJson(json)).toEqual([
-    { name: '센소지', address: '도쿄 다이토구', lat: 35.71, lng: 139.79, note: '', url: 'http://maps.google.com/?cid=1' },
-    { name: '시부야 스카이', address: '', lat: 35.66, lng: 139.7, note: '', url: 'https://www.google.com/maps/search/?q=35.66,139.70' },
-  ]);
-  const csv = 'Title,Note,URL,Tags,Comment\n"이치란, 신주쿠",꼭 가기,"https://www.google.com/maps/place/x/@35.69,139.70,17z",,\n후운지,,https://www.google.com/maps/place/y,,맛집\n';
-  expect(parseTakeoutCsv(csv)).toEqual([
-    { name: '이치란, 신주쿠', address: '', lat: 35.69, lng: 139.7, note: '꼭 가기', url: 'https://www.google.com/maps/place/x/@35.69,139.70,17z' },
-    { name: '후운지', address: '', lat: null, lng: null, note: '맛집', url: 'https://www.google.com/maps/place/y' },
-  ]);
-  expect(coordsFromUrl('https://www.google.com/maps/place/a/data=!3d51.5!4d-0.12')).toEqual([51.5, -0.12]);
+  const info = await makeFlights(fetchFn as unknown as typeof fetch, 'K').today('ke 703');
+  expect(info).toEqual({
+    direction: 'departure', carrier: '대한항공', otherAirport: '나리타', otherAirportCode: 'NRT', scheduled: '09:00', estimated: '09:35',
+    terminal: 'T2', gate: '250', checkin: 'E01-E06', status: '지연',
+  });
+  expect(urls[0]).toContain('StatusOfPassengerFlightsOdp/getPassengerDeparturesOdp?serviceKey=K&flight_id=KE703&type=json');
+  await expect(makeFlights(fetchFn as unknown as typeof fetch, '').today('KE703')).rejects.toThrow('no flight api key');
 });
 
 test('seats: the aircraft type picks the cabin layout, and a seat is window, aisle or middle', () => {

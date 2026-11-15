@@ -77,7 +77,7 @@ test('typing shows matching places; picking one and pressing 추가하기 puts i
   await render(withServices(sv, <AddStopScreen dayId={day.id} onDone={done} />));
 
   // 입력하는 대로 결과가 아래에 나온다 (검색 버튼 없이)
-  await fireEvent.changeText(screen.getByPlaceholderText('장소 이름으로 검색'), '센소');
+  await fireEvent.changeText(screen.getByPlaceholderText('장소 이름 또는 구글 지도 링크'), '센소');
   await fireEvent.press(await screen.findByText('센소지'));
   // 시간·할 일을 적는 창이 뜨고, 추가하기를 누르면 바로 일정에 들어간다
   await pickTime('예정 시간', '09:30');
@@ -86,7 +86,7 @@ test('typing shows matching places; picking one and pressing 추가하기 puts i
   expect(await screen.findByText('✓ 센소지 · 09:30')).toBeTruthy();
   expect((await sv.repo.listStops(day.id)).map((s) => [s.name, s.plannedTime, s.planNote, s.kind])).toEqual([['센소지', '09:30', '[ ] 부적 사기', 'sight']]);
 
-  await fireEvent.changeText(screen.getByPlaceholderText('장소 이름으로 검색'), '스카이');
+  await fireEvent.changeText(screen.getByPlaceholderText('장소 이름 또는 구글 지도 링크'), '스카이');
   await fireEvent.press(await screen.findByText('스카이트리'));
   await fireEvent.press(screen.getByText('추가하기'));
   await waitFor(async () => expect(await sv.repo.listStops(day.id)).toHaveLength(2));
@@ -111,24 +111,19 @@ test('a place with a planned time goes into the day in time order, and before th
   expect((await sv.repo.listStops(day.id)).map((s) => s.name)).toEqual(['이른 아침', '아침', '점심', '호텔']);
 });
 
-test('saved places imported from Google Maps can be picked from the add screen', async () => {
+test('pasting a Google Maps link finds that place and opens the add form; results show their category', async () => {
   const sv = await makeTestServices();
-  sv.places.search = async (q) => (q === '후운지' ? [{ placeId: 'p9', name: '후운지', address: '신주쿠', lat: 35.69, lng: 139.69 }] : []);
+  const link = 'https://maps.app.goo.gl/abc123';
+  sv.places.fromMapsUrl = async (url) => (url === link ? { placeId: 'p7', name: 'Trattoria da Enzo', address: 'Roma', lat: 41.88, lng: 12.47, kind: 'food', category: '음식점' } : null);
+  sv.places.search = async () => [{ placeId: 'p1', name: '콜로세움', address: '로마', lat: 41.89, lng: 12.49, category: '문화적 랜드마크' }];
   const trip = await sv.repo.createTrip({ name: 't', city: 'c', startDate: '2027-03-01', endDate: '2027-03-01', baseCurrency: 'KRW' });
   const [day] = await sv.repo.listDays(trip.id);
-  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-  const files = [
-    { name: 'Saved Places.json', text: JSON.stringify({ features: [{ geometry: { coordinates: [139.79, 35.71] }, properties: { location: { name: '센소지', address: '다이토구' } } }] }) },
-    { name: '도쿄 맛집.csv', text: 'Title,Note,URL,Comment\n후운지,츠케멘,https://www.google.com/maps/place/x,\n없는곳,,,\n' },
-  ];
-  await render(withServices(sv, <AddStopScreen dayId={day.id} onDone={noop} pickSavedFiles={async () => files} />));
-  await fireEvent.press(screen.getByText('구글 지도에서 가져오기'));
-  await waitFor(() => expect(alert).toHaveBeenCalledWith('저장한 장소 2곳을 가져왔어요', '위치를 찾지 못한 1곳은 빠졌어요'));
-  await fireEvent.press(await screen.findByText('후운지'));
-  expect(screen.getByDisplayValue('츠케멘')).toBeTruthy(); // 메모는 할 일로 따라온다
-  await fireEvent.press(screen.getByText('추가하기'));
-  await waitFor(async () => expect((await sv.repo.listStops(day.id)).map((s) => [s.name, s.placeId])).toEqual([['후운지', 'p9']]));
-  alert.mockRestore();
+  await render(withServices(sv, <AddStopScreen dayId={day.id} onDone={noop} />));
+  await fireEvent.changeText(screen.getByPlaceholderText('장소 이름 또는 구글 지도 링크'), '콜로');
+  expect(await screen.findByText('문화적 랜드마크')).toBeTruthy();
+  await fireEvent.changeText(screen.getByPlaceholderText('장소 이름 또는 구글 지도 링크'), link);
+  await fireEvent.press(await screen.findByText('추가하기'));
+  await waitFor(async () => expect((await sv.repo.listStops(day.id)).map((s) => [s.name, s.placeId, s.kind])).toEqual([['Trattoria da Enzo', 'p7', 'food']]));
 });
 
 test('searching while offline offers to retry when connected', async () => {
@@ -137,7 +132,7 @@ test('searching while offline offers to retry when connected', async () => {
   const trip = await sv.repo.createTrip({ name: 't', city: 'c', startDate: '2027-03-01', endDate: '2027-03-01', baseCurrency: 'KRW' });
   const [day] = await sv.repo.listDays(trip.id);
   await render(withServices(sv, <AddStopScreen dayId={day.id} onDone={noop} />));
-  await fireEvent.changeText(screen.getByPlaceholderText('장소 이름으로 검색'), 'xy');
+  await fireEvent.changeText(screen.getByPlaceholderText('장소 이름 또는 구글 지도 링크'), 'xy');
   expect(await screen.findByText('연결되면 다시 시도')).toBeTruthy();
 });
 
@@ -363,15 +358,20 @@ test('a flight on a place shows its seat on a cabin drawing', async () => {
   const trip = await sv.repo.createTrip({ name: 't', city: 'c', startDate: '2027-03-01', endDate: '2027-03-01', baseCurrency: 'KRW' });
   const { applyBooking } = jest.requireActual('@/state/itineraryOps') as typeof import('@/state/itineraryOps');
   await applyBooking(sv, {
-    id: 'f', tripId: trip.id, kind: 'flight', title: 'KE703', vehicle: 'Boeing 787-9', seat: '32A', gate: '250',
+    id: 'f', tripId: trip.id, kind: 'flight', title: 'KE703', vehicle: 'Boeing 787-9', seat: '32A',
     from: { name: '인천 ICN', placeId: null, lat: 37.4, lng: 126.4 }, to: { name: '도쿄 NRT', placeId: null, lat: 35.7, lng: 140.3 },
     departDate: '2027-03-01', departTime: '09:00', arriveDate: '2027-03-01', arriveTime: '11:20',
   });
   const [day] = await sv.repo.listDays(trip.id);
   const stops = await sv.repo.listStops(day.id);
   expect(stops.map((s) => [s.name, s.plannedTime, s.kind])).toEqual([['인천 ICN', '09:00', 'airport'], ['도쿄 NRT', '11:20', 'airport']]);
-  await render(home(sv, trip.id));
-  expect(await screen.findByText('KE703 · 게이트 250 · 좌석 32A')).toBeTruthy();
+  // 비행 당일에는 인천공항 운항 정보로 카운터·게이트·지연을 채운다
+  sv.flights = {
+    available: true,
+    today: async () => ({ direction: 'departure', gate: '250', terminal: 'T2', checkin: 'E01-E06', status: '지연', estimated: '09:35' }),
+  };
+  await render(home(sv, trip.id, '2027-03-01'));
+  expect(await screen.findByText('KE703 · 지연 · 변경 09:35 · 터미널 T2 · 카운터 E01-E06 · 게이트 250 · 좌석 32A')).toBeTruthy();
   const { StopScreen } = jest.requireActual('./StopScreen') as typeof import('./StopScreen');
   await render(withServices(sv, <StopScreen stopId={stops[0].id} pickPhoto={async () => []} resolvePhoto={(u) => u} openUrl={noop} />));
   expect(await screen.findByLabelText('my-seat:32A')).toBeTruthy();

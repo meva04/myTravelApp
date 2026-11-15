@@ -1,5 +1,5 @@
 import { GoogleApiError, OfflineError } from './errors';
-import { kindFromTypes, makePlaces } from './places';
+import { isMapsUrl, kindFromTypes, makePlaces, parseMapsUrl } from './places';
 import { decodePolyline } from './polyline';
 import { makeRoutes } from './routes';
 
@@ -112,4 +112,44 @@ test('place types become icon kinds: restaurants, sights, hotels', () => {
   expect(kindFromTypes(['lodging', 'hotel'])).toBe('lodging');
   expect(kindFromTypes(['cafe', 'food'])).toBe('cafe');
   expect(kindFromTypes([])).toBeNull();
+});
+
+test('search shows Google\'s category name and asks only for same-tier fields', async () => {
+  const fetchFn = jest.fn(async () =>
+    json({ places: [{ id: 'p1', displayName: { text: '이치란' }, location: { latitude: 1, longitude: 2 }, primaryType: 'ramen_restaurant', primaryTypeDisplayName: { text: '라멘 전문점' } }] }),
+  );
+  const [hit] = await makePlaces(fetchFn as unknown as typeof fetch, 'KEY').search('이치란');
+  expect(hit).toMatchObject({ kind: 'food', category: '라멘 전문점' });
+  const [, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
+  expect((init.headers as Record<string, string>)['X-Goog-FieldMask']).toBe(
+    'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.primaryType,places.primaryTypeDisplayName',
+  );
+});
+
+test('Google Maps links give the place name and its exact coordinates', () => {
+  expect(isMapsUrl('https://maps.app.goo.gl/xYz')).toBe(true);
+  expect(isMapsUrl('https://www.google.co.kr/maps/place/x')).toBe(true);
+  expect(isMapsUrl('센소지')).toBe(false);
+  expect(parseMapsUrl('https://www.google.com/maps/place/Trattoria+da+Enzo+al+29/@41.8881,12.4735,17z/data=!3m1!4b1!4m6!3m5!1s0x0:0x1!8m2!3d41.8882!4d12.4741')).toEqual({
+    name: 'Trattoria da Enzo al 29', lat: 41.8882, lng: 12.4741,
+  });
+  expect(parseMapsUrl('https://www.google.com/maps/search/?api=1&query=%EC%84%BC%EC%86%8C%EC%A7%80')).toEqual({ name: '센소지', lat: null, lng: null });
+});
+
+test('a short share link is followed, then the place is matched by name right at that spot', async () => {
+  const fetchFn = jest.fn(async (url: string) => {
+    if (url.startsWith('https://maps.app.goo.gl')) {
+      return { ok: true, status: 200, url: 'https://www.google.com/maps/place/Da+Enzo/@41.88,12.47,17z/data=!3d41.8882!4d12.4741', text: async (): Promise<string> => '' };
+    }
+    return json({
+      places: [
+        { id: 'far', displayName: { text: 'Da Enzo' }, location: { latitude: 41.9, longitude: 12.5 } },
+        { id: 'near', displayName: { text: 'Da Enzo' }, location: { latitude: 41.8882, longitude: 12.4741 } },
+      ],
+    });
+  });
+  const hit = await makePlaces(fetchFn as unknown as typeof fetch, 'KEY').fromMapsUrl('https://maps.app.goo.gl/abc');
+  expect(hit?.placeId).toBe('near');
+  const body = JSON.parse((fetchFn.mock.calls[1] as unknown as [string, RequestInit])[1].body as string);
+  expect(body).toMatchObject({ textQuery: 'Da Enzo', locationBias: { circle: { radius: 500 } } });
 });

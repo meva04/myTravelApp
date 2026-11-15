@@ -16,11 +16,12 @@ export async function makeTestServices(over: Partial<Services> = {}): Promise<Se
   const places: Places = {
     search: async () => [],
     details: async (placeId) => ({ placeId, address: '', photoUrls: [], photoAuthors: [] }),
+    fromMapsUrl: async () => null,
   };
   const routes: Routes = {
     compute: async () => ({ id: randomUUID(), kind: 'default', polyline: [], distanceMeters: 0, durationSeconds: 0 }),
   };
-  const flights: Flights = { available: false, lookup: async () => null };
+  const flights: Flights = { available: false, today: async () => null };
   return { repo, places, routes, flights, newId: randomUUID, onItineraryChanged: () => {}, ...over };
 }
 

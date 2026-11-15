@@ -1,5 +1,5 @@
 import { parseChecklist } from '@/domain/checklist';
-import type { Booking, Day, Expense, Id, Leg, Note, Photo, SavedPlace, SeqItem, Stop, Trip } from '@/domain/types';
+import type { Booking, Day, Expense, Id, Leg, Note, Photo, SeqItem, Stop, Trip } from '@/domain/types';
 
 import type { Db } from './Db';
 import { ADDED_COLUMNS, NOTE_TABLE, PHOTO_TABLE, SCHEMA } from './schema';
@@ -378,28 +378,6 @@ export function makeRepo(db: Db, newId: () => Id) {
     },
     async deleteBooking(id: Id): Promise<void> {
       await db.run('DELETE FROM booking WHERE id = ?', [id]);
-    },
-
-    async listSavedPlaces(): Promise<SavedPlace[]> {
-      return db.all<SavedPlace>('SELECT id, source, list, name, address, lat, lng, placeId, note FROM saved_place ORDER BY list, name');
-    },
-    /** 저장한 장소를 더한다. 같은 출처에 같은 이름·위치가 이미 있으면 건너뛴다. 더한 개수를 돌려준다. */
-    addSavedPlaces(places: Omit<SavedPlace, 'id'>[]): Promise<number> {
-      return write(async () => {
-        let n = 0;
-        for (const p of places) {
-          const dup = await db.all('SELECT id FROM saved_place WHERE source = ? AND name = ? AND abs(lat - ?) < 0.0005 AND abs(lng - ?) < 0.0005', [p.source, p.name, p.lat, p.lng]);
-          if (dup.length) continue;
-          await db.run('INSERT INTO saved_place (id, source, list, name, address, lat, lng, placeId, note) VALUES (?,?,?,?,?,?,?,?,?)', [
-            newId(), p.source, p.list, p.name, p.address, p.lat, p.lng, p.placeId, p.note,
-          ]);
-          n++;
-        }
-        return n;
-      });
-    },
-    async deleteSavedPlace(id: Id): Promise<void> {
-      await db.run('DELETE FROM saved_place WHERE id = ?', [id]);
     },
   };
 }

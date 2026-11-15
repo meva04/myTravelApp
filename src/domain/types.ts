@@ -144,20 +144,12 @@ export type Booking = {
   car?: string;
   /** 기종·열차 종류·배 이름 (예: Boeing 787-9, KTX-산천) */
   vehicle?: string;
-  /** 게이트를 마지막으로 확인한 시각 (ISO) */
+  /** 체크인 카운터 (예: K11-K16) */
+  checkin?: string;
+  /** 당일 운항 상태 (지연, 탑승중, 결항 …) */
+  status?: string;
+  /** 바뀐 출발 시각 'HH:mm' (지연 등) */
+  estimated?: string;
+  /** 당일 운항 정보를 마지막으로 확인한 시각 (ISO) */
   checkedAt?: string;
-};
-
-/** 구글 지도 등에서 가져온 저장한 장소 */
-export type SavedPlace = {
-  id: Id;
-  source: 'google' | 'naver';
-  /** 가져온 목록 이름 (파일 이름) */
-  list: string;
-  name: string;
-  address: string;
-  lat: number;
-  lng: number;
-  placeId: string | null;
-  note: string;
 };

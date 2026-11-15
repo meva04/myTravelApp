@@ -151,16 +151,24 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
   };
   const points = useMemo(() => allPoints(stops, legs), [stops, legs]);
 
-  // 오늘 출발하는 항공편은 게이트를 확인해 둔다 (30분에 한 번).
+  // 오늘 인천공항에서 뜨고 내리는 항공편은 게이트·카운터·지연 여부를 확인해 둔다 (10분에 한 번, 무료 공공데이터).
   useEffect(() => {
     if (!sv.flights.available || !today) return;
-    const due = bookings.filter((b) => b.kind === 'flight' && b.departDate === today && (!b.checkedAt || Date.now() - Date.parse(b.checkedAt) > 30 * 60000));
+    const due = bookings.filter(
+      (b) => b.kind === 'flight' && (b.departDate === today || b.arriveDate === today) && (!b.checkedAt || Date.now() - Date.parse(b.checkedAt) > 10 * 60000),
+    );
     if (!due.length) return;
     let alive = true;
     (async () => {
       for (const b of due) {
-        const info = await sv.flights.lookup(b.title, b.departDate!).catch(() => null);
-        const next: Booking = { ...b, checkedAt: new Date().toISOString(), ...(info?.gate ? { gate: info.gate } : {}), ...(info?.terminal ? { terminal: info.terminal } : {}) };
+        const info = await sv.flights.today(b.title).catch(() => null);
+        const dep = info?.direction === 'departure';
+        const next: Booking = {
+          ...b,
+          checkedAt: new Date().toISOString(),
+          ...(info && dep ? { gate: info.gate ?? b.gate, terminal: info.terminal ?? b.terminal, checkin: info.checkin, status: info.status, estimated: info.estimated } : {}),
+          ...(info && !info.carrier ? {} : info && !b.carrier ? { carrier: info.carrier } : {}),
+        };
         await repo.saveBooking(next);
       }
       if (alive) setBump((x) => x + 1);

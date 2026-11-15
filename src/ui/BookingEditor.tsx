@@ -1,16 +1,18 @@
 // 숙소·교통편 예약 입력. 편명을 넣으면 (조회 키가 있을 때) 공항·시간·게이트·기종을 채운다.
-import { useState } from 'react';
 import { View } from 'react-native';
 
 import { TRANSPORT_KINDS, type Booking, type BookingKind } from '@/domain/types';
 import { t } from '@/i18n/ko';
 import { useServices } from '@/state/ServicesContext';
+import { airlineOf } from '@/travel/airlines';
 import { space } from '@/theme/tokens';
 
-import { Button, Chip, Field, Row, Txt } from './kit';
+import { Chip, Field, Row, Txt } from './kit';
 import { DateField, TimeField } from './PickerField';
 import { PlaceSearchField } from './PlaceSearchField';
 import { SeatMap } from './SeatMap';
+
+const AIRCRAFT = ['A321', 'A330', 'A350', 'A380', 'B737', 'B777', 'B787'];
 
 type Props = {
   value: Booking;
@@ -28,7 +30,6 @@ export function bookingReady(b: Booking): boolean {
 
 export function BookingEditor({ value: b, onChange, min, max }: Props) {
   const { flights } = useServices();
-  const [lookup, setLookup] = useState<'idle' | 'loading' | 'none' | 'error'>('idle');
   const set = (patch: Partial<Booking>) => onChange({ ...b, ...patch });
 
   if (b.kind === 'lodging') {
@@ -44,20 +45,8 @@ export function BookingEditor({ value: b, onChange, min, max }: Props) {
     );
   }
 
-  const find = async () => {
-    if (!b.title.trim() || !b.departDate) return;
-    setLookup('loading');
-    try {
-      const info = await flights.lookup(b.title, b.departDate);
-      if (!info) return setLookup('none');
-      const { status: _status, ...rest } = info;
-      onChange({ ...b, ...Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined)) });
-      setLookup('idle');
-    } catch {
-      setLookup('error');
-    }
-  };
   const isFlight = b.kind === 'flight';
+  const airline = isFlight ? airlineOf(b.title)?.name : undefined;
 
   return (
     <View style={{ gap: space.md }}>
@@ -66,16 +55,20 @@ export function BookingEditor({ value: b, onChange, min, max }: Props) {
           <Chip key={k} label={t(`booking.kind.${k}` as 'booking.kind.flight')} selected={b.kind === k} onPress={() => set({ kind: k })} />
         ))}
       </Row>
-      <Field placeholder={t(isFlight ? 'booking.flightNo' : 'booking.vehicleNo')} value={b.title} onChangeText={(v) => set({ title: v })} autoCapitalize="characters" />
+      <Field
+        placeholder={t(isFlight ? 'booking.flightNo' : 'booking.vehicleNo')}
+        value={b.title}
+        onChangeText={(v) => {
+          // 편명을 적으면 항공사 이름을 바로 채운다 (앱 안의 표, 무료)
+          const before = airlineOf(b.title)?.name;
+          const now = isFlight ? airlineOf(v)?.name : undefined;
+          set({ title: v, ...(now && (!b.carrier || b.carrier === before) ? { carrier: now } : {}) });
+        }}
+        autoCapitalize="characters"
+      />
+      {isFlight && airline && <Txt kind="soft">{`✈︎ ${airline}`}</Txt>}
       <DateField label={t('booking.departDate')} value={b.departDate ?? ''} onChange={(departDate) => set({ departDate, arriveDate: b.arriveDate && b.arriveDate >= departDate ? b.arriveDate : departDate })} />
-      {isFlight &&
-        (flights.available ? (
-          <Button kind="ghost" label={lookup === 'loading' ? t('common.loading') : t('booking.lookup')} onPress={() => void find()} />
-        ) : (
-          <Txt kind="small">{t('booking.noLookup')}</Txt>
-        ))}
-      {lookup === 'none' && <Txt kind="soft">{t('booking.notFound')}</Txt>}
-      {lookup === 'error' && <Txt kind="soft">{t('booking.lookupError')}</Txt>}
+      {isFlight && <Txt kind="small">{t(flights.available ? 'booking.icnInfo' : 'booking.icnNoKey')}</Txt>}
       <PlaceSearchField label={t(`booking.from.${b.kind}` as 'booking.from.flight')} value={b.from} onChange={(from) => set({ from })} />
       <TimeField label={t('booking.departTime')} value={b.departTime ?? ''} onChange={(v) => set({ departTime: v || undefined })} />
       <PlaceSearchField label={t(`booking.to.${b.kind}` as 'booking.to.flight')} value={b.to} onChange={(to) => set({ to })} />
@@ -83,6 +76,14 @@ export function BookingEditor({ value: b, onChange, min, max }: Props) {
       <TimeField label={t('booking.arriveTime')} value={b.arriveTime ?? ''} onChange={(v) => set({ arriveTime: v || undefined })} />
       <Field placeholder={t('booking.carrier')} value={b.carrier ?? ''} onChangeText={(v) => set({ carrier: v })} />
       <Field placeholder={t(isFlight ? 'booking.aircraft' : 'booking.vehicle')} value={b.vehicle ?? ''} onChangeText={(v) => set({ vehicle: v })} />
+      {isFlight && (
+        // 기종은 예약 확인서·탑승권에 나온다. 자주 타는 기종은 눌러서 고른다.
+        <Row style={{ flexWrap: 'wrap' }}>
+          {AIRCRAFT.map((a) => (
+            <Chip key={a} label={a} selected={b.vehicle === a} onPress={() => set({ vehicle: a })} />
+          ))}
+        </Row>
+      )}
       {isFlight && (
         <Row>
           <Field style={{ flex: 1 }} placeholder={t('booking.terminal')} value={b.terminal ?? ''} onChangeText={(v) => set({ terminal: v })} />
