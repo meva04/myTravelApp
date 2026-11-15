@@ -3,13 +3,14 @@ import { StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 
 import { fitRegion, nearestStopAt, nextRegion, type CameraEvent, type Region } from '@/domain/camera';
-import type { Id, LatLng, Leg, Stop } from '@/domain/types';
-import { colors, fonts, radius } from '@/theme/tokens';
+import type { LatLng, Leg, Stop } from '@/domain/types';
+import { colors, fonts, radius, stopColor } from '@/theme/tokens';
 
 import { selectedOption } from './legRoutes';
 import mapStyle from './mapStyle.json';
+import type { Selection } from './points';
 
-export type Selection = { type: 'stop' | 'leg'; id: Id } | null;
+export type { Selection };
 export type DayMapHandle = { send: (e: CameraEvent) => void };
 
 type Props = {
@@ -20,7 +21,7 @@ type Props = {
   selection: Selection;
   onSelect: (s: Selection) => void;
   onRegion: (r: Region) => void;
-  onLongPress: (p: LatLng) => void;
+  onLongPress?: (p: LatLng) => void;
 };
 
 const toMap = (r: Region) => ({ latitude: r.lat, longitude: r.lng, latitudeDelta: r.latDelta, longitudeDelta: r.lngDelta });
@@ -73,7 +74,7 @@ export const DayMap = forwardRef<DayMapHandle, Props>(function DayMap({ initialP
         const id = nearestStopAt(tap, stops, r);
         if (id) onSelect({ type: 'stop', id });
       }}
-      onLongPress={(e) => onLongPress({ lat: e.nativeEvent.coordinate.latitude, lng: e.nativeEvent.coordinate.longitude })}
+      onLongPress={(e) => onLongPress?.({ lat: e.nativeEvent.coordinate.latitude, lng: e.nativeEvent.coordinate.longitude })}
     >
       {legs.map((leg) => {
         const option = selectedOption(leg);
@@ -100,8 +101,8 @@ export const DayMap = forwardRef<DayMapHandle, Props>(function DayMap({ initialP
             anchor={{ x: 0.5, y: 0.5 }}
             tappable={false} // 구글 지도는 마커를 누르면 카메라를 옮기므로, 누름은 지도 onPress 에서 판정한다
           >
-            <View style={[styles.pin, s.arrivedAt && styles.pinArrived, on && styles.pinOn]}>
-              <Text style={[styles.pinText, on && { color: colors.card }]}>{i + 1}</Text>
+            <View style={[styles.pin, { backgroundColor: stopColor(i) }, on && styles.pinOn]}>
+              <Text style={[styles.pinText, on && styles.pinTextOn]}>{s.arrivedAt ? '✓' : i + 1}</Text>
             </View>
           </Marker>
         );
@@ -111,8 +112,8 @@ export const DayMap = forwardRef<DayMapHandle, Props>(function DayMap({ initialP
 });
 
 const styles = StyleSheet.create({
-  pin: { minWidth: 28, height: 28, borderRadius: radius.pill, backgroundColor: colors.card, borderWidth: 2, borderColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
-  pinArrived: { borderColor: colors.accent },
-  pinOn: { backgroundColor: colors.accent, borderColor: colors.accent },
-  pinText: { fontSize: fonts.size.sm, fontWeight: '700', color: colors.ink },
+  pin: { width: 30, height: 30, borderRadius: radius.pill, borderWidth: 2, borderColor: colors.card, alignItems: 'center', justifyContent: 'center' },
+  pinOn: { width: 42, height: 42, borderWidth: 3 },
+  pinText: { fontSize: fonts.size.sm, fontWeight: '700', color: colors.card },
+  pinTextOn: { fontSize: fonts.size.md },
 });

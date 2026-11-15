@@ -11,6 +11,10 @@ export const colors = {
   ok: '#5B7F5A',
 } as const;
 
+/** 방문지 번호 색. 목록과 지도 핀이 같은 색을 쓴다. */
+export const stopColors = ['#7A5BA6', '#3E9C8F', '#C8553D', '#D08C2E', '#3F6C8F', '#B0567E'] as const;
+export const stopColor = (index: number): string => stopColors[index % stopColors.length];
+
 export const fonts = {
   body: undefined as string | undefined, // 시스템 글꼴
   size: { xs: 12, sm: 14, md: 16, lg: 20, xl: 28 },

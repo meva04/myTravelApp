@@ -3,11 +3,12 @@ import { useMemo, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { bearingTo, isOffscreen, type Region } from '@/domain/camera';
-import type { LatLng, Leg, Stop, TravelMode } from '@/domain/types';
+import type { LatLng, Leg, TravelMode } from '@/domain/types';
 import { t } from '@/i18n/ko';
-import { DayMap, type DayMapHandle, type Selection } from '@/map/DayMap';
+import { DayMap, type DayMapHandle } from '@/map/DayMap';
 import { selectedOption } from '@/map/legRoutes';
 import { OffscreenHint } from '@/map/OffscreenHint';
+import { allPoints, targetOf, type Selection } from '@/map/points';
 import { useLegRoutes } from '@/map/useLegRoutes';
 import { useServices } from '@/state/ServicesContext';
 import { colors, space } from '@/theme/tokens';
@@ -157,25 +158,6 @@ function legLabel(leg: Leg, status: string | undefined): string {
   if (status === 'offline') return t('map.routeOffline');
   if (status === 'error') return t('map.routeError');
   return t('map.routeLoading');
-}
-
-function allPoints(stops: Stop[], legs: Leg[]): LatLng[] {
-  const pts: LatLng[] = stops.map((s) => ({ lat: s.lat, lng: s.lng }));
-  for (const l of legs) pts.push(...(selectedOption(l)?.polyline ?? []));
-  return pts;
-}
-
-function targetOf(sel: NonNullable<Selection>, stops: Stop[], legs: Leg[]): LatLng | null {
-  if (sel.type === 'stop') {
-    const s = stops.find((x) => x.id === sel.id);
-    return s ? { lat: s.lat, lng: s.lng } : null;
-  }
-  const leg = legs.find((l) => l.id === sel.id);
-  if (!leg) return null;
-  const line = selectedOption(leg)?.polyline;
-  if (line?.length) return line[Math.floor(line.length / 2)];
-  const from = stops.find((s) => s.id === leg.fromStopId);
-  return from ? { lat: from.lat, lng: from.lng } : null;
 }
 
 const styles = StyleSheet.create({

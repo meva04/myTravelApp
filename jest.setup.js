@@ -21,3 +21,20 @@ jest.mock('react-native-sortables', () => {
     );
   return { __esModule: true, default: { Grid } };
 });
+// 지도와 바텀시트는 네이티브 화면이라 테스트에서는 내용만 그대로 보여 준다.
+jest.mock('react-native-maps', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  const MapView = React.forwardRef((props, ref) => {
+    React.useImperativeHandle(ref, () => ({ animateToRegion: () => {} }));
+    return React.createElement(View, { testID: 'map' }, props.children);
+  });
+  const Pass = (props) => React.createElement(View, null, props.children);
+  return { __esModule: true, default: MapView, Marker: Pass, Polyline: () => null, PROVIDER_GOOGLE: 'google' };
+});
+jest.mock('@gorhom/bottom-sheet', () => {
+  const React = require('react');
+  const { ScrollView, View } = require('react-native');
+  const BottomSheet = (props) => React.createElement(View, null, props.children);
+  return { __esModule: true, default: BottomSheet, BottomSheetScrollView: ScrollView };
+});

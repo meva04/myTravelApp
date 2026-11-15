@@ -5,6 +5,10 @@ export function formatMoney(amount: number, currency: string): string {
 
 export const formatKm = (meters: number): string => (meters / 1000).toFixed(1);
 
+/** 구간 거리: 1km 미만은 '756m', 이상은 '1.1km'. */
+export const formatDistance = (meters: number): string =>
+  meters < 1000 ? `${Math.round(meters)}m` : `${(meters / 1000).toFixed(1)}km`;
+
 /** ISO 시각을 기기 현지 'HH:mm' 으로. */
 export function formatTime(iso: string): string {
   const d = new Date(iso);

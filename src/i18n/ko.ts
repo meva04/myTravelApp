@@ -35,6 +35,10 @@ export const ko = {
   'day.moveTo': '다른 날로',
   'day.moveToTitle': '어느 날로 옮길까요?',
   'day.dragHint': '길게 눌러 끌면 순서를 바꿀 수 있어요',
+  'day.edit': '편집',
+  'day.editDone': '완료',
+  'day.openStop': '자세히',
+  'map.expand': '크게 보기',
 
   'search.placeholder': '장소 이름으로 검색',
   'search.go': '검색',

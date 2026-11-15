@@ -104,6 +104,7 @@ test('deleting the only stop of a day empties the day', async () => {
   const { sv, trip, days } = await dayWithStops(['센소지']);
   jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => buttons?.find((b) => b.style === 'destructive')?.onPress?.());
   await render(home(sv, trip.id));
+  await fireEvent.press(await screen.findByText('편집'));
   await fireEvent.press(await screen.findByText('삭제'));
   expect(await screen.findByText('이 날은 아직 비어 있어요')).toBeTruthy();
   expect(await sv.repo.listStops(days[0].id)).toEqual([]);
@@ -114,6 +115,7 @@ test('moving a stop to another day carries its expenses to that date', async () 
   const [a] = await sv.repo.listStops(days[0].id);
   await sv.repo.addExpense({ tripId: trip.id, date: '2027-03-01', stopId: a.id, amount: 100, currency: 'KRW', category: 'food', memo: '' });
   await render(home(sv, trip.id));
+  await fireEvent.press(await screen.findByText('편집'));
   await fireEvent.press((await screen.findAllByText('다른 날로'))[0]);
   await fireEvent.press(screen.getAllByText('2일차')[1]);
   await screen.findByText('B');
@@ -135,4 +137,41 @@ test('the day summary shows spending that could not be converted', async () => {
   await sv.repo.addExpense({ tripId: trip.id, date: '2027-03-01', stopId: null, amount: 20, currency: 'EUR', category: 'etc', memo: '' });
   await render(home(sv, trip.id));
   expect(await screen.findByText(/환산 안 됨: 20 EUR/)).toBeTruthy();
+});
+
+test('trip home shows the real distance of each leg by its travel mode', async () => {
+  const { sv, trip } = await dayWithStops(['A', 'B', 'C']);
+  const meters = [1100, 756];
+  sv.routes.compute = async (_from, _to, mode) => ({ id: mode + meters.length, kind: 'default', polyline: [], distanceMeters: meters.shift() ?? 0, durationSeconds: 600 });
+  await render(home(sv, trip.id));
+  expect(await screen.findByText('1.1km')).toBeTruthy();
+  expect(screen.getByText('756m')).toBeTruthy();
+  expect(screen.getAllByText('도보 · 10분 ▾')).toHaveLength(2);
+});
+
+test('changing a leg to transit re-measures it with that mode', async () => {
+  const { sv, trip } = await dayWithStops(['A', 'B']);
+  sv.routes.compute = async (_from, _to, mode) => ({ id: mode, kind: 'default', polyline: [], distanceMeters: mode === 'transit' ? 2400 : 900, durationSeconds: 600 });
+  await render(home(sv, trip.id));
+  await fireEvent.press(await screen.findByText('900m'));
+  await fireEvent.press(screen.getByText('대중교통'));
+  expect(await screen.findByText('2.4km')).toBeTruthy();
+});
+
+test('tapping a stop selects it, tapping it again opens it', async () => {
+  const { sv, trip } = await dayWithStops(['A', 'B']);
+  const open = jest.fn();
+  await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={noop} onOpenMap={noop} onOpenStop={open} onExpenses={noop} onSettings={noop} />));
+  await fireEvent.press(await screen.findByText('B'));
+  expect(open).not.toHaveBeenCalled();
+  await fireEvent.press(screen.getByText('B'));
+  expect(open).toHaveBeenCalledTimes(1);
+});
+
+test('the add button adds a stop to the shown day', async () => {
+  const { sv, trip, days } = await dayWithStops(['A']);
+  const add = jest.fn();
+  await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={add} onOpenMap={noop} onOpenStop={noop} onExpenses={noop} onSettings={noop} />));
+  await fireEvent.press(await screen.findByLabelText('장소 추가'));
+  expect(add).toHaveBeenCalledWith(days[0].id);
 });
