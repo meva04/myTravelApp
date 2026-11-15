@@ -1,44 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
-import { Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { serializeChecklist, type CheckItem } from '@/domain/checklist';
-import { syncLegs } from '@/domain/itinerary';
-import type { Stop } from '@/domain/types';
+import type { SavedPlace, Stop } from '@/domain/types';
 import { GoogleApiError, OfflineError } from '@/google/errors';
 import type { PlaceHit } from '@/google/places';
 import { t } from '@/i18n/ko';
+import { addStops, type NewPlace } from '@/state/itineraryOps';
 import type { Services } from '@/state/services';
-import { useServices } from '@/state/ServicesContext';
+import { useLoad, useServices } from '@/state/ServicesContext';
 import { colors, fonts, radius, space } from '@/theme/tokens';
-import { Checklist } from '@/ui/Checklist';
-import { Button, Field, Txt } from '@/ui/kit';
+import { importSavedFiles } from '@/travel/importSaved';
+import { Checklist, withDraft } from '@/ui/Checklist';
+import { Button, Chip, Field, Row, Txt } from '@/ui/kit';
 import { TimeField } from '@/ui/PickerField';
+import { KindIcon } from '@/ui/PlaceVisual';
 import { SheetModal } from '@/ui/SheetModal';
 
-type NewPlace = { placeId: string | null; name: string; lat: number; lng: number };
-
-/** 그 날의 맨 끝에 방문지들을 추가하고 구간을 맞춘다. */
+/** 그 날 일정에 방문지들을 넣고 구간을 맞춘다. 시간이 있으면 시간 순서에 맞는 자리에. */
 export async function appendStops(sv: Services, dayId: string, places: { place: NewPlace; extra?: Partial<Stop> }[]): Promise<Stop[]> {
-  const stops = await sv.repo.listStops(dayId);
-  const added: Stop[] = places.map(({ place, extra }, i) => ({
-    id: sv.newId(), dayId, order: stops.length + i, placeId: place.placeId, name: place.name, lat: place.lat, lng: place.lng,
-    plannedTime: null, arrivedAt: null, arrivalMethod: null, memo: '', planNote: '', skipped: false, legNote: '', ...extra,
-  }));
-  const next = [...stops, ...added];
-  await sv.repo.saveStops(dayId, next);
-  await sv.repo.saveLegs(dayId, syncLegs(next, await sv.repo.listLegs(dayId), sv.newId));
-  sv.onItineraryChanged();
-  return added;
+  return addStops(sv, dayId, places);
 }
 
-/** 그 날의 맨 끝에 방문지 하나를 추가한다. */
+/** 그 날 일정에 방문지 하나를 넣는다. */
 export async function appendStop(sv: Services, dayId: string, place: NewPlace, extra: Partial<Stop> = {}): Promise<Stop> {
   return (await appendStops(sv, dayId, [{ place, extra }]))[0];
 }
 
 type Status = 'idle' | 'loading' | 'offline' | 'error' | 'none';
-/** 저장하기 전에 담아 둔 장소 */
-type Picked = { key: string; hit: PlaceHit; time: string; todos: CheckItem[] };
+/** 시간·할 일을 적는 중인 장소 */
+type Editing = { hit: PlaceHit; time: string; todos: CheckItem[]; typing: string };
 
 /** 키보드 높이. 아래 고정 버튼을 키보드 위로 올리는 데 쓴다. */
 function useKeyboardHeight(): number {
@@ -59,16 +50,26 @@ function useKeyboardHeight(): number {
 const DEBOUNCE_MS = 400;
 const MIN_CHARS = 2;
 
-export function AddStopScreen({ dayId, onDone }: { dayId: string; onDone: () => void }) {
+type Props = {
+  dayId: string;
+  onDone: () => void;
+  /** 구글 테이크아웃 파일 고르기 (기기에서만) */
+  pickSavedFiles?: () => Promise<{ name: string; text: string }[]>;
+};
+
+export function AddStopScreen({ dayId, onDone, pickSavedFiles }: Props) {
   const sv = useServices();
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<PlaceHit[]>([]);
   const [status, setStatus] = useState<Status>('idle');
-  const [picked, setPicked] = useState<Picked[]>([]);
-  const [editing, setEditing] = useState<Picked | null>(null);
+  const [added, setAdded] = useState<Stop[]>([]);
+  const [editing, setEditing] = useState<Editing | null>(null);
   const [saving, setSaving] = useState(false);
+  const [showSaved, setShowSaved] = useState(false);
+  const [importing, setImporting] = useState(false);
   const seq = useRef(0);
   const keyboard = useKeyboardHeight();
+  const { data: saved, reload: reloadSaved } = useLoad(() => sv.repo.listSavedPlaces(), []);
 
   const search = async (q: string) => {
     const mine = ++seq.current; // 늦게 도착한 옛 검색 결과로 덮어쓰지 않게
@@ -76,7 +77,7 @@ export function AddStopScreen({ dayId, onDone }: { dayId: string; onDone: () => 
     setStatus('loading');
     try {
       const stops = await sv.repo.listStops(dayId);
-      const last = picked.length ? picked[picked.length - 1].hit : stops[stops.length - 1];
+      const last = stops[stops.length - 1];
       const near = last ? { lat: last.lat, lng: last.lng } : undefined;
       const found = await sv.places.search(q.trim(), near);
       if (mine !== seq.current) return;
@@ -99,36 +100,50 @@ export function AddStopScreen({ dayId, onDone }: { dayId: string; onDone: () => 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
-  const open = (hit: PlaceHit) => {
-    setEditing(picked.find((p) => p.hit.placeId === hit.placeId) ?? { key: `${hit.placeId}:${++seq.current}`, hit, time: '', todos: [] });
-  };
-  const isPicked = (key: string) => picked.some((p) => p.key === key);
-  const commit = () => {
-    if (!editing) return;
-    setPicked(isPicked(editing.key) ? picked.map((p) => (p.key === editing.key ? editing : p)) : [...picked, editing]);
-    setEditing(null);
-  };
-  const unpick = () => {
-    if (!editing) return;
-    setPicked(picked.filter((p) => p.key !== editing.key));
-    setEditing(null);
-  };
-  const save = async () => {
-    if (picked.length === 0 || saving) return;
+  const open = (hit: PlaceHit) => setEditing({ hit, time: '', todos: [], typing: '' });
+  const openSaved = (p: SavedPlace) =>
+    setEditing({ hit: { placeId: p.placeId ?? '', name: p.name, address: p.address, lat: p.lat, lng: p.lng }, time: '', todos: p.note ? [{ id: 'n', text: p.note, done: false }] : [], typing: '' });
+
+  // "추가하기" 를 누르면 바로 일정에 들어간다 (따로 저장하기 단계가 없다).
+  const add = async () => {
+    if (!editing || saving) return;
     setSaving(true);
     try {
-      await appendStops(
-        sv,
-        dayId,
-        picked.map((p) => ({ place: p.hit, extra: { plannedTime: p.time || null, planNote: serializeChecklist(p.todos) } })),
-      );
-      onDone();
+      const { hit, time } = editing;
+      const [stop] = await appendStops(sv, dayId, [
+        {
+          place: { placeId: hit.placeId || null, name: hit.name, lat: hit.lat, lng: hit.lng, kind: hit.kind ?? null },
+          extra: { plannedTime: time || null, planNote: serializeChecklist(withDraft(editing.todos, editing.typing)) },
+        },
+      ]);
+      setAdded((a) => [...a, stop]);
+      setEditing(null);
     } finally {
       setSaving(false);
     }
   };
 
+  const importGoogle = async () => {
+    if (!pickSavedFiles || importing) return;
+    setImporting(true);
+    try {
+      const files = await pickSavedFiles();
+      if (!files.length) return;
+      const r = await importSavedFiles(sv, files);
+      reloadSaved();
+      setShowSaved(true);
+      Alert.alert(t('saved.imported', { n: r.added }), r.missing ? t('saved.missing', { n: r.missing }) : undefined);
+    } catch {
+      Alert.alert(t('saved.importFailed'), t('saved.howTo'));
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const shownHits = query.trim().length >= MIN_CHARS ? hits : [];
+  const q = query.trim().toLowerCase();
+  const shownSaved = (saved ?? []).filter((p) => !q || p.name.toLowerCase().includes(q) || p.address.toLowerCase().includes(q));
+  const addedIds = new Set(added.map((s) => s.placeId).filter(Boolean));
 
   return (
     <View style={styles.fill}>
@@ -142,23 +157,35 @@ export function AddStopScreen({ dayId, onDone }: { dayId: string; onDone: () => 
           autoFocus
           clearButtonMode="while-editing"
         />
+        <Row style={{ flexWrap: 'wrap' }}>
+          <Chip label={t('saved.mine', { n: saved?.length ?? 0 })} selected={showSaved} onPress={() => setShowSaved(!showSaved)} />
+          {pickSavedFiles && <Chip label={importing ? t('common.loading') : t('saved.importGoogle')} onPress={() => void importGoogle()} />}
+          <Chip label={t('saved.naverSoon')} onPress={() => Alert.alert(t('saved.naverSoon'), t('saved.naverBody'))} />
+        </Row>
       </View>
       <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-        {picked.length > 0 && (
-          <View style={{ gap: space.sm }}>
-            <Txt kind="soft">{t('add.picked', { n: picked.length })}</Txt>
-            {picked.map((p, i) => (
-              <Pressable key={p.key} accessibilityRole="button" onPress={() => setEditing(p)} style={({ pressed }) => [styles.picked, pressed && { opacity: 0.7 }]}>
-                <Text style={styles.pickedNo}>{i + 1}</Text>
+        {added.length > 0 && (
+          <View style={{ gap: space.xs }}>
+            <Txt kind="soft">{t('add.added', { n: added.length })}</Txt>
+            {added.map((s) => (
+              <Text key={s.id} style={styles.addedName}>{`✓ ${s.name}${s.plannedTime ? ` · ${s.plannedTime}` : ''}`}</Text>
+            ))}
+          </View>
+        )}
+
+        {showSaved && (
+          <View style={{ gap: 0 }}>
+            <Txt kind="soft">{shownSaved.length ? t('saved.title') : t('saved.empty')}</Txt>
+            {shownSaved.length === 0 && <Txt kind="small">{t('saved.howTo')}</Txt>}
+            {shownSaved.map((p) => (
+              <Pressable key={p.id} accessibilityRole="button" onPress={() => openSaved(p)} style={({ pressed }) => [styles.hit, pressed && { opacity: 0.7 }]}>
+                <Text style={styles.star}>★</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.name}>{p.hit.name}</Text>
-                  <Text style={styles.sub}>
-                    {[p.time, p.todos.filter((x) => x.text.trim()).length ? t('add.todos', { n: p.todos.filter((x) => x.text.trim()).length }) : null]
-                      .filter(Boolean)
-                      .join(' · ') || t('add.tapToEdit')}
+                  <Text style={styles.name}>{p.name}</Text>
+                  <Text style={styles.sub} numberOfLines={1}>
+                    {[p.list, p.address].filter(Boolean).join(' · ')}
                   </Text>
                 </View>
-                <Text style={styles.edit}>{t('common.edit')}</Text>
               </Pressable>
             ))}
           </View>
@@ -169,25 +196,23 @@ export function AddStopScreen({ dayId, onDone }: { dayId: string; onDone: () => 
         {status === 'error' && <Txt kind="soft">{t('search.error')}</Txt>}
         {status === 'offline' && <Button kind="ghost" label={t('common.retryWhenOnline')} onPress={() => void search(query)} />}
 
-        {shownHits.map((h) => {
-          const already = picked.some((p) => p.hit.placeId === h.placeId);
-          return (
-            <Pressable key={h.placeId} accessibilityRole="button" onPress={() => open(h)} style={({ pressed }) => [styles.hit, pressed && { opacity: 0.7 }]}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{h.name}</Text>
-                <Text style={styles.sub} numberOfLines={1}>
-                  {h.address}
-                </Text>
-              </View>
-              {already && <Text style={styles.badge}>{t('add.inList')}</Text>}
-            </Pressable>
-          );
-        })}
+        {shownHits.map((h) => (
+          <Pressable key={h.placeId} accessibilityRole="button" onPress={() => open(h)} style={({ pressed }) => [styles.hit, pressed && { opacity: 0.7 }]}>
+            <KindIcon kind={h.kind} size={16} color={colors.inkSoft} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.name}>{h.name}</Text>
+              <Text style={styles.sub} numberOfLines={1}>
+                {h.address}
+              </Text>
+            </View>
+            {addedIds.has(h.placeId) && <Text style={styles.badge}>{t('add.inList')}</Text>}
+          </Pressable>
+        ))}
       </ScrollView>
 
-      {picked.length > 0 && (
+      {added.length > 0 && !editing && (
         <View style={[styles.footer, keyboard > 0 && { bottom: keyboard + space.sm }]}>
-          <Button label={t('add.save', { n: picked.length })} onPress={() => void save()} />
+          <Button label={t('add.done', { n: added.length })} onPress={onDone} />
         </View>
       )}
 
@@ -196,15 +221,16 @@ export function AddStopScreen({ dayId, onDone }: { dayId: string; onDone: () => 
           title={editing.hit.name}
           subtitle={editing.hit.address}
           onClose={() => setEditing(null)}
-          footer={
-            <View style={{ gap: space.sm }}>
-              <Button label={isPicked(editing.key) ? t('add.update') : t('add.add')} onPress={commit} />
-              {isPicked(editing.key) && <Button kind="ghost" label={t('add.remove')} onPress={unpick} />}
-            </View>
-          }
+          footer={<Button label={t('add.add')} onPress={() => void add()} />}
         >
           <TimeField label={t('stop.plannedTime')} value={editing.time} onChange={(time) => setEditing({ ...editing, time })} />
-          <Checklist items={editing.todos} onChange={(todos) => setEditing({ ...editing, todos })} editable placeholder={t('stop.planNote')} />
+          <Checklist
+            items={editing.todos}
+            onChange={(todos) => setEditing((e) => e && { ...e, todos })}
+            onDraft={(typing) => setEditing((e) => e && { ...e, typing })}
+            editable
+            placeholder={t('stop.planNote')}
+          />
         </SheetModal>
       )}
     </View>
@@ -213,14 +239,13 @@ export function AddStopScreen({ dayId, onDone }: { dayId: string; onDone: () => 
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.paper },
-  searchBar: { paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.sm },
+  searchBar: { paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.sm, gap: space.sm },
   body: { paddingHorizontal: space.lg, paddingBottom: 120, gap: space.sm },
-  hit: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.md, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.line },
+  hit: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.line },
   name: { fontSize: fonts.size.md, fontWeight: '600', color: colors.ink },
   sub: { fontSize: fonts.size.sm, color: colors.inkSoft, marginTop: 2 },
   badge: { fontSize: fonts.size.xs, color: colors.ok, fontWeight: '700' },
-  picked: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderRadius: radius.lg, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
-  pickedNo: { width: 24, height: 24, borderRadius: 12, textAlign: 'center', lineHeight: 24, overflow: 'hidden', backgroundColor: colors.ink, color: colors.card, fontWeight: '700', fontSize: fonts.size.sm },
-  edit: { fontSize: fonts.size.sm, color: colors.inkSoft },
-  footer: { position: 'absolute', left: space.lg, right: space.lg, bottom: space.xxl },
+  star: { fontSize: fonts.size.md, color: '#D08C2E' },
+  addedName: { fontSize: fonts.size.sm, color: colors.ok, fontWeight: '600' },
+  footer: { position: 'absolute', left: space.lg, right: space.lg, bottom: space.xxl, borderRadius: radius.md },
 });

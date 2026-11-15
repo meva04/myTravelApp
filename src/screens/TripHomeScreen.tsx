@@ -1,30 +1,34 @@
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Sortable from 'react-native-sortables';
 
-import { summarizeExpenses } from '@/domain/expenses';
-import { removeStop, reorder, withHidden } from '@/domain/itinerary';
+import { bookingLine } from '@/domain/bookings';
 import { parseChecklist, serializeChecklist, type CheckItem } from '@/domain/checklist';
-import type { Day, Leg, Note, Stop, Trip, TravelMode } from '@/domain/types';
+import { summarizeExpenses } from '@/domain/expenses';
+import { removeStop } from '@/domain/itinerary';
+import type { Booking, Day, Leg, Note, SeqItem, Stop, Trip, TravelMode } from '@/domain/types';
 import { t } from '@/i18n/ko';
 import { DayMap, type DayMapHandle } from '@/map/DayMap';
-import { selectedOption, type LegStatus } from '@/map/legRoutes';
 import { directionsUrl } from '@/map/directions';
+import { selectedOption, type LegStatus } from '@/map/legRoutes';
 import { allPoints, targetOf, type Selection } from '@/map/points';
 import { useLegRoutes } from '@/map/useLegRoutes';
-import { moveStop, saveDay, setSkipped } from '@/state/itineraryOps';
+import { moveStop, saveDay, saveOrder, setSkipped } from '@/state/itineraryOps';
 import { useLoad, useServices } from '@/state/ServicesContext';
 import { colors, fonts, radius, space, stopColor } from '@/theme/tokens';
+import { Checklist, withDraft } from '@/ui/Checklist';
 import { formatAmounts, formatDistance, formatKm, formatMoney, formatTime } from '@/ui/format';
-import { Checklist } from '@/ui/Checklist';
-import { SheetModal } from '@/ui/SheetModal';
 import { Card, Chip, Row, Txt } from '@/ui/kit';
+import { PlaceThumb } from '@/ui/PlaceVisual';
+import { SheetModal } from '@/ui/SheetModal';
+import { SwipeRow } from '@/ui/SwipeRow';
+
+import { DiaryDay, type DiaryEntry } from './DiaryDay';
 
 type Props = {
   tripId: string;
   onAddStop: (dayId: string) => void;
-  onOpenMap: (dayId: string) => void;
   onOpenStop: (stopId: string) => void;
   /** 이동 메모 화면을 연다 */
   onOpenNote?: (noteId: string) => void;
@@ -34,18 +38,23 @@ type Props = {
   onTrip?: (trip: Trip) => void;
   /** 화면에 다시 돌아왔을 때 바뀌는 값. 바뀌면 다시 불러온다. */
   refreshKey?: number;
-  /** 오늘 날짜 'YYYY-MM-DD'. 여행 중이면 그날 탭으로 연다. */
+  /** 오늘 날짜 'YYYY-MM-DD'. 여행 중이면 그날 탭으로 연다. 지난 날은 일기 모드로 연다. */
   today?: string;
   /** 구글 지도 길찾기 링크를 연다 */
   openUrl?: (url: string) => void;
+  /** 저장된 사진 파일 이름 → 화면에 쓸 주소 */
+  resolvePhoto?: (uri: string) => string;
 };
 
 const MODES: TravelMode[] = ['walk', 'transit', 'drive'];
-/** 지도가 차지하는 화면 비율. 시트는 그 바로 아래에서 시작한다. */
-const MAP_SHARE = 0.42;
-const SHEET_OVERLAP = 20;
+/** 일정 시트 높이 (화면 비율). 손잡이를 끌어 올리고 내려 크기를 바꾼다. */
+const SNAPS = [0.28, 0.58, 0.92];
+/** 이보다 높이 올리면 지도 대신 일정을 보는 것이라 지도 여백은 그대로 둔다 */
+const MAX_INSET = 0.6;
 
-export function TripHomeScreen({ tripId, onAddStop, onOpenMap, onOpenStop, onOpenNote = () => {}, onTrip, refreshKey = 0, today, openUrl = (url) => void Linking.openURL(url) }: Props) {
+type Item = { kind: 'stop'; id: string; stop: Stop; index: number } | { kind: 'note'; id: string; note: Note };
+
+export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () => {}, onTrip, refreshKey = 0, today, openUrl = (url) => void Linking.openURL(url), resolvePhoto = (u) => u }: Props) {
   const sv = useServices();
   const { repo } = sv;
   const { data: trip } = useLoad(() => repo.getTrip(tripId), [tripId, refreshKey]);
@@ -57,9 +66,12 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenMap, onOpenStop, onOpe
   const [moving, setMoving] = useState<Stop | null>(null);
   const [editing, setEditing] = useState(false);
   const [selection, setSelection] = useState<Selection>(null);
+  // 날마다 고른 보기. 정하지 않았으면 지난 날은 일기, 아니면 계획.
+  const [viewOf, setViewOf] = useState<Record<string, 'plan' | 'diary'>>({});
   const map = useRef<DayMapHandle>(null);
   const screen = useWindowDimensions();
   const [height, setHeight] = useState(screen.height * 0.85);
+  const [sheetIndex, setSheetIndex] = useState(1);
   const day = days?.find((d) => d.id === dayId);
 
   useEffect(() => {
@@ -72,26 +84,65 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenMap, onOpenStop, onOpe
   const stops = useMemo(() => allStops.filter((s) => !s.skipped), [allStops]);
   const hidden = useMemo(() => allStops.filter((s) => s.skipped), [allStops]);
   const [showHidden, setShowHidden] = useState(false);
-  // 이동 메모: 장소 사이의 할 일 카드. 각각 기록·사진·비용을 가진다.
-  const { data: dayNotes, reload: reloadNotes } = useLoad(async () => (dayId ? repo.listNotesForDay(dayId) : []), [dayId, refreshKey]);
-  const notes = dayNotes ?? [];
-  // 이동 메모를 더하는 중인 장소 (그 장소에서 다음 장소로 가는 길)
-  const [noteFor, setNoteFor] = useState<string | null>(null);
-  const [noteDraft, setNoteDraft] = useState<CheckItem[]>([]);
-  const addNotesFor = (s: Stop) => {
-    setNoteFor(s.id);
-    setNoteDraft([]);
+  // 일정 순서(장소와 이동 메모가 한 줄), 이동 메모, 그날 사진, 예약
+  const [bump, setBump] = useState(0);
+  const { data: extra } = useLoad(
+    async () =>
+      dayId
+        ? {
+            dayId,
+            seq: await repo.listSequence(dayId),
+            notes: await repo.listNotesForDay(dayId),
+            photos: await repo.listPhotosForDay(dayId),
+            bookings: await repo.listBookings(tripId),
+          }
+        : undefined,
+    [dayId, tripId, refreshKey, bump],
+  );
+  const current = extra?.dayId === dayId ? extra : undefined;
+  const notes = useMemo(() => current?.notes ?? [], [current]);
+  const photos = current?.photos ?? [];
+  const bookings = useMemo(() => current?.bookings ?? [], [current]);
+
+  // 화면에 보일 칸들 (숨긴 장소 제외). 장소 번호는 보이는 장소끼리 센다.
+  const rows = useMemo<Item[]>(() => {
+    const seq = current?.seq ?? stops.map((s) => ({ kind: 'stop', id: s.id }) as SeqItem);
+    const out: Item[] = [];
+    let n = 0;
+    for (const it of seq) {
+      if (it.kind === 'stop') {
+        const stop = stops.find((s) => s.id === it.id);
+        if (stop) out.push({ kind: 'stop', id: stop.id, stop, index: n++ });
+      } else {
+        const note = notes.find((x) => x.id === it.id);
+        if (note) out.push({ kind: 'note', id: note.id, note });
+      }
+    }
+    // 아직 순서에 반영되지 않은 새 장소
+    for (const s of stops) if (!out.some((r) => r.id === s.id)) out.push({ kind: 'stop', id: s.id, stop: s, index: n++ });
+    return out;
+  }, [current, stops, notes]);
+
+  const changed = () => {
+    sv.onItineraryChanged();
+    retry();
+    setBump((b) => b + 1);
   };
-  const noteStop = noteFor ? allStops.find((s) => s.id === noteFor) : undefined;
-  const noteNext = noteStop ? stops[stops.findIndex((s) => s.id === noteStop.id) + 1] : undefined;
-  const saveNewNotes = async (s: Stop, items: CheckItem[]) => {
+
+  // 이동 메모를 더하는 중인 자리 (이 장소 다음, 다음 장소로 가는 길)
+  const [noteFor, setNoteFor] = useState<Stop | null>(null);
+  const [noteDraft, setNoteDraft] = useState<CheckItem[]>([]);
+  const [noteTyping, setNoteTyping] = useState('');
+  const noteNext = noteFor ? stops[stops.findIndex((s) => s.id === noteFor.id) + 1] : undefined;
+  const saveNewNotes = async (s: Stop) => {
+    const items = withDraft(noteDraft, noteTyping).filter((it) => it.text.trim());
     setNoteFor(null);
-    for (const it of items) if (it.text.trim()) await repo.addNote(s.id, it.text.trim());
-    reloadNotes();
+    if (items.length) await repo.addNotes(s.dayId, s.id, items.map((it) => it.text.trim()));
+    setBump((b) => b + 1);
   };
   const checkNote = async (n: Note, done: boolean) => {
     await repo.updateNote(n.id, { done });
-    reloadNotes();
+    setBump((b) => b + 1);
   };
   // 일정에서 바로 체크한다 (실행한 일 표시).
   const checkPlan = async (s: Stop, items: CheckItem[]) => {
@@ -99,6 +150,25 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenMap, onOpenStop, onOpe
     retry();
   };
   const points = useMemo(() => allPoints(stops, legs), [stops, legs]);
+
+  // 오늘 출발하는 항공편은 게이트를 확인해 둔다 (30분에 한 번).
+  useEffect(() => {
+    if (!sv.flights.available || !today) return;
+    const due = bookings.filter((b) => b.kind === 'flight' && b.departDate === today && (!b.checkedAt || Date.now() - Date.parse(b.checkedAt) > 30 * 60000));
+    if (!due.length) return;
+    let alive = true;
+    (async () => {
+      for (const b of due) {
+        const info = await sv.flights.lookup(b.title, b.departDate!).catch(() => null);
+        const next: Booking = { ...b, checkedAt: new Date().toISOString(), ...(info?.gate ? { gate: info.gate } : {}), ...(info?.terminal ? { terminal: info.terminal } : {}) };
+        await repo.saveBooking(next);
+      }
+      if (alive) setBump((x) => x + 1);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [bookings, today, sv.flights, repo]);
 
   const changeDay = (id: string) => {
     setDayId(id);
@@ -123,22 +193,16 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenMap, onOpenStop, onOpe
     if (selection?.type === 'stop' && selection.id === stop.id) onOpenStop(stop.id);
     else select({ type: 'stop', id: stop.id });
   };
-  const pressLeg = (leg: Leg) => {
-    select({ type: 'leg', id: leg.id });
-  };
 
-  const changed = () => {
-    sv.onItineraryChanged();
-    retry();
-  };
-
-  const onDragEnd = async (from: number, to: number) => {
-    if (!day || !loaded || from === to) return;
-    await saveDay(sv, day.id, withHidden(reorder(stops, from, to), allStops));
+  const onDragEnd = async (data: Item[]) => {
+    if (!day || !loaded) return;
+    const order = data.map((r) => ({ kind: r.kind, id: r.id }) as SeqItem);
+    if (order.every((x, i) => rows[i]?.id === x.id)) return;
+    await saveOrder(sv, day.id, [...order, ...hidden.map((s) => ({ kind: 'stop', id: s.id }) as SeqItem)]);
     changed();
   };
-  const remove = (stop: Stop) => {
-    Alert.alert(stop.name, undefined, [
+  const removeStopAsk = (stop: Stop) => {
+    Alert.alert(stop.name, t('day.deleteStop'), [
       { text: t('common.cancel'), style: 'cancel' },
       {
         text: t('common.delete'),
@@ -147,6 +211,19 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenMap, onOpenStop, onOpe
           if (!day || !loaded) return;
           await saveDay(sv, day.id, removeStop(allStops, stop.id));
           changed();
+        },
+      },
+    ]);
+  };
+  const removeNoteAsk = (n: Note) => {
+    Alert.alert(n.text, t('note.deleteTitle'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.delete'),
+        style: 'destructive',
+        onPress: async () => {
+          await repo.deleteNote(n.id);
+          setBump((b) => b + 1);
         },
       },
     ]);
@@ -164,11 +241,104 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenMap, onOpenStop, onOpe
   const spent = summary && day ? (summary.byDate[day.date] ?? 0) : 0;
   const unconverted = summary && day ? formatAmounts(summary.unconvertedByDate[day.date]) : '';
   const meters = legs.reduce((sum, l) => sum + (selectedOption(l)?.distanceMeters ?? 0), 0);
-  const mapHeight = Math.round(height * MAP_SHARE);
+  const inset = Math.round(height * Math.min(SNAPS[sheetIndex] ?? SNAPS[1], MAX_INSET));
+  const past = !!day && !!today && day.date < today;
+  const view = (day && viewOf[day.id]) ?? (past ? 'diary' : 'plan');
+  const photosOf = (stopId: string) => photos.filter((p) => p.stopId === stopId && !p.noteId);
+  const bookingOf = (s: Stop) => (s.bookingId ? bookings.find((b) => b.id === s.bookingId) : undefined);
+  const dayLine = day ? t('day.summary', { stops: stops.length, km: formatKm(meters), spent: formatMoney(spent, trip.baseCurrency) }) : '';
+
+  const renderRow = (r: Item) => {
+    if (r.kind === 'note') {
+      const n = r.note;
+      if (editing) {
+        return (
+          <Card style={styles.editCard}>
+            <Row>
+              <View style={styles.noteDot} />
+              <Txt style={{ flex: 1 }}>{n.text}</Txt>
+              <Chip label={t('common.delete')} onPress={() => removeNoteAsk(n)} />
+            </Row>
+          </Card>
+        );
+      }
+      return (
+          // 이동 메모는 장소와 같은 급의 카드. 누르면 메모 화면(기록·사진·비용)이 열린다.
+          <NoteRow onPress={() => onOpenNote(n.id)} label={`${t('leg.note')} ${n.text}`} name={n.text} onDelete={() => removeNoteAsk(n)}>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Checklist items={[{ id: n.id, text: n.text, done: n.done }]} onChange={([c]) => void checkNote(n, c.done)} compact />
+              {n.memo !== '' && (
+                <Text style={styles.noteMemo} numberOfLines={1}>
+                  {n.memo}
+                </Text>
+              )}
+            </View>
+            <Text style={styles.chevronText}>›</Text>
+          </NoteRow>
+      );
+    }
+    const s = r.stop;
+    if (editing) {
+      return (
+        <Card style={styles.editCard}>
+          <Row>
+            <Dot index={r.index} />
+            <Txt style={{ flex: 1 }}>{s.name}</Txt>
+          </Row>
+          <Row>
+            {days.length > 1 && <Chip label={t('day.moveTo')} onPress={() => setMoving(s)} />}
+            <Chip label={t('common.delete')} onPress={() => removeStopAsk(s)} />
+          </Row>
+        </Card>
+      );
+    }
+    const leg = legs.find((l) => l.fromStopId === s.id);
+    const booking = bookingOf(s);
+    return (
+      <View>
+          <StopRow
+            onDelete={() => removeStopAsk(s)}
+            stop={s}
+            index={r.index}
+            first={r.index === 0}
+            last={!leg}
+            selected={selection?.type === 'stop' && selection.id === s.id}
+            thumb={<PlaceThumb stop={s} photos={photosOf(s.id)} resolvePhoto={resolvePhoto} />}
+            info={booking ? bookingLine(booking, s.name) : ''}
+            onPress={() => pressStop(s)}
+            onOpen={() => onOpenStop(s.id)}
+            onCheck={(items) => void checkPlan(s, items)}
+          />
+        {leg && (
+          <LegRow
+            onAddNote={() => {
+              setNoteFor(s);
+              setNoteDraft([]);
+              setNoteTyping('');
+            }}
+            onDirections={() => {
+              const to = stops.find((x) => x.id === leg.toStopId);
+              if (to) openUrl(directionsUrl(s, to, leg.mode));
+            }}
+            leg={leg}
+            status={status[leg.id]}
+            selected={selection?.type === 'leg' && selection.id === leg.id}
+            onPress={() => select({ type: 'leg', id: leg.id })}
+            onMode={(m) => leg.mode !== m && setMode(leg.id, m)}
+            onRetry={retry}
+          />
+        )}
+      </View>
+    );
+  };
+
+  const diaryEntries: DiaryEntry[] = rows.map((r) =>
+    r.kind === 'stop' ? { kind: 'stop', stop: r.stop, photos: photosOf(r.stop.id) } : { kind: 'note', note: r.note, photos: photos.filter((p) => p.noteId === r.note.id) },
+  );
 
   return (
     <View style={styles.fill} onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>
-      <View style={{ height: mapHeight }}>
+      <View style={StyleSheet.absoluteFill}>
         {loaded && (
           <DayMap
             // 날을 바꾸거나 첫 방문지가 생기면 새로 그려 전체가 보이게 맞춘다.
@@ -180,20 +350,26 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenMap, onOpenStop, onOpe
             selection={selection}
             onSelect={(s) => s && select(s)}
             onRegion={() => {}}
+            bottomInset={inset}
           />
         )}
-        <View style={[styles.mapButtons, { bottom: SHEET_OVERLAP + space.sm }]}>
-          {points.length > 0 && <MapButton label={t('map.fitAll')} onPress={() => map.current?.send({ type: 'fitAll', points })} />}
-          {day && <MapButton label={t('map.expand')} onPress={() => onOpenMap(day.id)} />}
-        </View>
+        {points.length > 0 && (
+          <View style={styles.mapButtons}>
+            <MapButton label={t('map.fitAll')} onPress={() => map.current?.send({ type: 'fitAll', points })} />
+          </View>
+        )}
       </View>
 
       <BottomSheet
-        snapPoints={[Math.max(height - mapHeight + SHEET_OVERLAP, 200), height * 0.92]}
-        index={0}
+        snapPoints={SNAPS.map((f) => Math.round(height * f))}
+        index={1}
+        onChange={(i) => i >= 0 && setSheetIndex(i)}
         enableDynamicSizing={false}
+        // 옆으로 미는 동작(카드 밀어서 삭제)은 시트가 가져가지 않게 한다
+        activeOffsetY={[-12, 12]}
+        failOffsetX={[-8, 8]}
         backgroundStyle={styles.sheetBg}
-        handleIndicatorStyle={{ backgroundColor: colors.line }}
+        handleIndicatorStyle={{ backgroundColor: colors.line, width: 44 }}
       >
         <BottomSheetScrollView contentContainerStyle={styles.sheet}>
           <View style={styles.tabs}>
@@ -202,97 +378,51 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenMap, onOpenStop, onOpe
                 <Chip key={d.id} label={t('day.label', { n: i + 1 })} selected={d.id === dayId} onPress={() => changeDay(d.id)} />
               ))}
             </ScrollView>
-            {stops.length > 0 && <Chip label={editing ? t('day.editDone') : t('day.edit')} selected={editing} onPress={() => setEditing(!editing)} />}
+            {day && (
+              <Chip
+                label={view === 'diary' ? t('day.planView') : t('day.diaryView')}
+                onPress={() => setViewOf({ ...viewOf, [day.id]: view === 'diary' ? 'plan' : 'diary' })}
+              />
+            )}
+            {view === 'plan' && rows.length > 0 && <Chip label={editing ? t('day.editDone') : t('day.edit')} selected={editing} onPress={() => setEditing(!editing)} />}
           </View>
 
-          {day && (
+          {day && view === 'diary' && (
+            <DiaryDay
+              date={day.date}
+              dayNumber={days.indexOf(day) + 1}
+              entries={diaryEntries}
+              missed={stops.filter((s) => !s.arrivedAt && !s.bookingId && s.memo === '' && photosOf(s.id).length === 0)}
+              summary={`${t('diary.summary', { n: stops.filter((s) => s.arrivedAt).length, km: formatKm(meters), photos: photos.length })}`}
+              resolvePhoto={resolvePhoto}
+              onOpenStop={onOpenStop}
+              onOpenNote={onOpenNote}
+            />
+          )}
+
+          {day && view === 'plan' && (
             <>
-              <Txt kind="soft">
-                {`${day.date} · ${t('day.summary', { stops: stops.length, km: formatKm(meters), spent: formatMoney(spent, trip.baseCurrency) })}`}
-              </Txt>
+              <Txt kind="soft">{`${day.date} · ${dayLine}`}</Txt>
               {unconverted !== '' && <Txt kind="soft">{`${t('expense.unconverted')}: ${unconverted}`}</Txt>}
 
-              {loaded && stops.length === 0 && (
+              {loaded && rows.length === 0 && (
                 <Card>
                   <Txt kind="soft">{t('day.empty')}</Txt>
                 </Card>
               )}
 
-              {editing ? (
-                <>
-                  <Sortable.Grid
-                    columns={1}
-                    rowGap={space.sm}
-                    data={stops}
-                    keyExtractor={(s) => s.id}
-                    onDragEnd={({ fromIndex, toIndex }) => void onDragEnd(fromIndex, toIndex)}
-                    renderItem={({ item, index }) => (
-                      <Card>
-                        <Row>
-                          <Dot index={index} />
-                          <Txt style={{ flex: 1 }}>{item.name}</Txt>
-                        </Row>
-                        <Row>
-                          {days.length > 1 && <Chip label={t('day.moveTo')} onPress={() => setMoving(item)} />}
-                          <Chip label={t('common.delete')} onPress={() => remove(item)} />
-                        </Row>
-                      </Card>
-                    )}
-                  />
-                  <Txt kind="small">{t('day.dragHint')}</Txt>
-                </>
-              ) : (
-                <View>
-                  {stops.map((s, i) => {
-                    const leg = legs.find((l) => l.fromStopId === s.id);
-                    return (
-                      <Fragment key={s.id}>
-                        <StopRow
-                          stop={s}
-                          index={i}
-                          first={i === 0}
-                          last={!leg}
-                          selected={selection?.type === 'stop' && selection.id === s.id}
-                          onPress={() => pressStop(s)}
-                          onOpen={() => onOpenStop(s.id)}
-                          onCheck={(items) => void checkPlan(s, items)}
-                        />
-                        {notes
-                          .filter((n) => n.stopId === s.id)
-                          .map((n) => (
-                            // 이동 메모는 하나하나가 각각의 카드. 누르면 메모 화면(기록·사진·비용)이 열린다.
-                            <NoteRow key={n.id} onPress={() => onOpenNote(n.id)} label={`${t('leg.note')} ${n.text}`}>
-                              <View style={{ flex: 1, gap: 2 }}>
-                                <Checklist items={[{ id: n.id, text: n.text, done: n.done }]} onChange={([c]) => void checkNote(n, c.done)} compact />
-                                {n.memo !== '' && (
-                                  <Text style={styles.noteMemo} numberOfLines={1}>
-                                    {n.memo}
-                                  </Text>
-                                )}
-                              </View>
-                              <Text style={styles.chevronText}>›</Text>
-                            </NoteRow>
-                          ))}
-                        {leg && (
-                          <LegRow
-                            onAddNote={() => addNotesFor(s)}
-                            onDirections={() => {
-                              const to = stops.find((x) => x.id === leg.toStopId);
-                              if (to) openUrl(directionsUrl(s, to, leg.mode));
-                            }}
-                            leg={leg}
-                            status={status[leg.id]}
-                            selected={selection?.type === 'leg' && selection.id === leg.id}
-                            onPress={() => pressLeg(leg)}
-                            onMode={(m) => leg.mode !== m && setMode(leg.id, m)}
-                            onRetry={retry}
-                          />
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </View>
-              )}
+              {/* 길게 눌러 끌면 장소와 이동 메모의 순서를 함께 바꾼다. 왼쪽으로 밀면 삭제. */}
+              <Sortable.Grid
+                columns={1}
+                rowGap={editing ? space.sm : 0}
+                data={rows}
+                keyExtractor={(r) => r.id}
+                dragActivationDelay={350}
+                activeItemScale={1.03}
+                onDragEnd={({ data }) => void onDragEnd(data)}
+                renderItem={({ item }) => renderRow(item)}
+              />
+              {rows.length > 1 && <Txt kind="small">{t('day.dragHint')}</Txt>}
 
               {!editing && hidden.length > 0 && (
                 <View style={{ gap: space.sm }}>
@@ -308,7 +438,7 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenMap, onOpenStop, onOpe
                             label={t('stop.unhide')}
                             onPress={async () => {
                               await setSkipped(sv, s, false);
-                              retry();
+                              changed();
                             }}
                           />
                         </Row>
@@ -331,17 +461,22 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenMap, onOpenStop, onOpe
         </BottomSheetScrollView>
       </BottomSheet>
 
-      {noteStop && (
-        <NoteEditor
-          title={`${t('note.addTitle')} · ${noteStop.name}${noteNext ? ` → ${noteNext.name}` : ''}`}
-          value={noteDraft}
-          onChange={setNoteDraft}
-          onSave={() => void saveNewNotes(noteStop, noteDraft)}
-          onCancel={() => setNoteFor(null)}
-        />
+      {noteFor && (
+        <SheetModal
+          title={`${t('note.addTitle')} · ${noteFor.name}${noteNext ? ` → ${noteNext.name}` : ''}`}
+          onClose={() => setNoteFor(null)}
+          footer={
+            <Row>
+              <Chip label={t('note.add')} selected onPress={() => void saveNewNotes(noteFor)} />
+              <Chip label={t('common.cancel')} onPress={() => setNoteFor(null)} />
+            </Row>
+          }
+        >
+          <Checklist items={noteDraft} onChange={setNoteDraft} onDraft={setNoteTyping} editable placeholder={t('leg.notePlaceholder')} autoFocus />
+        </SheetModal>
       )}
 
-      {day && (
+      {day && view === 'plan' && (
         <Pressable accessibilityRole="button" accessibilityLabel={t('day.addStop')} onPress={() => onAddStop(day.id)} style={({ pressed }) => [styles.fab, pressed && { opacity: 0.7 }]}>
           <Text style={styles.fabText}>+</Text>
         </Pressable>
@@ -377,18 +512,41 @@ function Rail({ top = true, bottom = true, children }: { top?: boolean; bottom?:
   );
 }
 
-function StopRow({ stop, index, first, last, selected, onPress, onOpen, onCheck }: { stop: Stop; index: number; first: boolean; last: boolean; selected: boolean; onPress: () => void; onOpen: () => void; onCheck: (items: CheckItem[]) => void }) {
+type StopRowProps = {
+  stop: Stop;
+  index: number;
+  first: boolean;
+  last: boolean;
+  selected: boolean;
+  thumb: ReactNode;
+  /** 예약 정보 한 줄 (편명·게이트·좌석 등) */
+  info: string;
+  onPress: () => void;
+  onOpen: () => void;
+  onCheck: (items: CheckItem[]) => void;
+  /** 왼쪽으로 밀어 나온 삭제 버튼 */
+  onDelete: () => void;
+};
+
+function StopRow({ stop, index, first, last, selected, thumb, info, onPress, onOpen, onCheck, onDelete }: StopRowProps) {
   const plan = parseChecklist(stop.planNote);
-  const sub = [stop.plannedTime, stop.arrivedAt && t('stop.arrivedAt', { time: formatTime(stop.arrivedAt) })].filter(Boolean).join(' · ');
+  // 도착하면 예정 시간 대신 도착 시간을 보여 준다 (예정 시간은 장소 화면의 계획에 남는다).
+  const time = stop.arrivedAt ? t('stop.arrivedAt', { time: formatTime(stop.arrivedAt) }) : stop.plannedTime;
   return (
-    <View style={[styles.row, selected && styles.rowOn]}>
+    <View style={[styles.row, styles.rowBg]}>
       <Rail top={!first} bottom={!last}>
         <Dot index={index} />
       </Rail>
+      <View style={{ flex: 1 }}>
+      <SwipeRow label={stop.name} onDelete={onDelete}>
       <Pressable onPress={onPress} style={({ pressed }) => [styles.stopCard, selected && styles.stopCardOn, pressed && { opacity: 0.8 }]}>
+        {thumb}
         <View style={{ flex: 1, gap: 2 }}>
-          <Text style={styles.stopName}>{stop.name}</Text>
-          {sub !== '' && <Text style={styles.stopSub}>{sub}</Text>}
+          <Text style={styles.stopName} numberOfLines={2}>
+            {stop.name}
+          </Text>
+          {time ? <Text style={[styles.stopSub, stop.arrivedAt && styles.arrived]}>{time}</Text> : null}
+          {info !== '' && <Text style={styles.info}>{info}</Text>}
           {plan.length > 0 && (
             <View style={styles.planNote}>
               <Checklist items={plan} onChange={onCheck} max={4} compact />
@@ -399,43 +557,31 @@ function StopRow({ stop, index, first, last, selected, onPress, onOpen, onCheck 
           <Text style={styles.chevronText}>›</Text>
         </Pressable>
       </Pressable>
+      </SwipeRow>
+      </View>
     </View>
   );
 }
 
-/** 이동 메모 추가 창. 일정 시트 안에서 쓰면 키보드에 가리므로 키보드 바로 위에 띄운다. 여러 개를 한 번에 적을 수 있다. */
-function NoteEditor({ title, value, onChange, onSave, onCancel }: { title: string; value: CheckItem[]; onChange: (v: CheckItem[]) => void; onSave: () => void; onCancel: () => void }) {
+/** 이동 메모 카드. 세로줄 위에 작은 점을 찍어 장소 카드와 구분한다. */
+function NoteRow({ children, onPress, label, name, onDelete }: { children: ReactNode; onPress?: () => void; label?: string; name: string; onDelete: () => void }) {
   return (
-    <SheetModal
-      title={title}
-      onClose={onCancel}
-      footer={
-        <Row>
-          <Chip label={t('note.add')} selected onPress={onSave} />
-          <Chip label={t('common.cancel')} onPress={onCancel} />
-        </Row>
-      }
-    >
-      <Checklist items={value} onChange={onChange} editable placeholder={t('leg.notePlaceholder')} autoFocus />
-    </SheetModal>
-  );
-}
-
-/** 두 장소 사이의 이동 메모 카드. 세로줄 위에 작은 점을 찍어 장소 카드와 구분한다. */
-function NoteRow({ children, onPress, label }: { children: ReactNode; onPress?: () => void; label?: string }) {
-  return (
-    <View style={styles.row}>
+    <View style={[styles.row, styles.rowBg]}>
       <Rail>
         <View style={styles.noteDot} />
       </Rail>
-      <Pressable accessibilityLabel={label} disabled={!onPress} onPress={onPress} style={({ pressed }) => [styles.noteCard, pressed && { opacity: 0.8 }]}>
-        {children}
-      </Pressable>
+      <View style={{ flex: 1 }}>
+        <SwipeRow label={name} onDelete={onDelete}>
+          <Pressable accessibilityLabel={label} disabled={!onPress} onPress={onPress} style={({ pressed }) => [styles.noteCard, pressed && { opacity: 0.8 }]}>
+            {children}
+          </Pressable>
+        </SwipeRow>
+      </View>
     </View>
   );
 }
 
-/** 두 장소 사이 구간. 이동 수단은 상황에 따라 바뀔 수 있으니 늘 보이는 토글로 바로 바꾼다. */
+/** 두 장소 사이 구간. 이동 수단은 늘 보이는 토글로 바로 바꾸고, 오른쪽 끝의 큰 버튼으로 이동 메모를 더한다. */
 function LegRow({ leg, status, selected, onPress, onMode, onRetry, onAddNote, onDirections }: { leg: Leg; status: LegStatus | undefined; selected: boolean; onPress: () => void; onMode: (m: TravelMode) => void; onRetry: () => void; onAddNote: () => void; onDirections: () => void }) {
   const option = selectedOption(leg);
   const loading = status === 'loading';
@@ -451,7 +597,7 @@ function LegRow({ leg, status, selected, onPress, onMode, onRetry, onAddNote, on
           ? t('map.routeError')
           : t('map.routeLoading');
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, styles.rowBg]}>
       <Rail>
         <Pressable accessibilityRole="button" onPress={onPress} style={[styles.pill, selected && styles.pillOn]}>
           <Text style={[styles.pillText, selected && { color: colors.card }]}>{distance}</Text>
@@ -489,11 +635,12 @@ function LegRow({ leg, status, selected, onPress, onMode, onRetry, onAddNote, on
           <Pressable accessibilityRole="button" onPress={onDirections} hitSlop={6} style={styles.directions}>
             <Text style={styles.directionsText}>{leg.mode === 'transit' ? t('leg.transitInfo') : t('leg.navigate')}</Text>
           </Pressable>
-          <Pressable accessibilityRole="button" onPress={onAddNote} hitSlop={6} style={styles.addNote}>
-            <Text style={styles.addNoteText}>{t('leg.addNote')}</Text>
-          </Pressable>
         </View>
       </View>
+      <Pressable accessibilityRole="button" accessibilityLabel={t('leg.addNote')} onPress={onAddNote} hitSlop={6} style={({ pressed }) => [styles.addNote, pressed && { opacity: 0.7 }]}>
+        <Text style={styles.addNotePlus}>+</Text>
+        <Text style={styles.addNoteText}>{t('leg.addNoteShort')}</Text>
+      </Pressable>
     </View>
   );
 }
@@ -503,14 +650,14 @@ const DOT = 30;
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.paper },
-  mapButtons: { position: 'absolute', right: space.md, flexDirection: 'row', gap: space.sm },
+  mapButtons: { position: 'absolute', right: space.md, top: space.md, flexDirection: 'row', gap: space.sm },
   mapButton: { paddingVertical: space.xs + 2, paddingHorizontal: space.md, borderRadius: radius.pill, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
   mapButtonText: { fontSize: fonts.size.xs, fontWeight: '600', color: colors.ink },
   sheetBg: { backgroundColor: colors.paper, borderTopLeftRadius: radius.lg + 4, borderTopRightRadius: radius.lg + 4 },
   sheet: { paddingHorizontal: space.lg, paddingTop: space.xs, paddingBottom: 120, gap: space.md },
   tabs: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   row: { flexDirection: 'row', alignItems: 'stretch' },
-  rowOn: {},
+  rowBg: { backgroundColor: colors.paper },
   rail: { width: RAIL, alignItems: 'center', justifyContent: 'center' },
   railLine: { position: 'absolute', width: 2, left: RAIL / 2 - 1, backgroundColor: colors.line },
   railTop: { top: 0, height: '50%' },
@@ -519,11 +666,11 @@ const styles = StyleSheet.create({
   dot: { width: DOT, height: DOT, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
   dotText: { color: colors.card, fontWeight: '700', fontSize: fonts.size.sm },
   stopCard: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    gap: space.md,
     marginVertical: space.xs,
-    padding: space.lg,
+    padding: space.md,
     borderRadius: radius.lg,
     backgroundColor: colors.card,
     borderWidth: 1,
@@ -532,8 +679,10 @@ const styles = StyleSheet.create({
   stopCardOn: { borderColor: colors.ink, borderWidth: 2 },
   stopName: { fontSize: fonts.size.md + 1, fontWeight: '700', color: colors.ink },
   stopSub: { fontSize: fonts.size.sm, color: colors.inkSoft },
+  arrived: { color: colors.ok, fontWeight: '600' },
+  info: { fontSize: fonts.size.xs, color: colors.route, fontWeight: '600' },
   planNote: { marginTop: space.xs },
-  chevron: { paddingLeft: space.sm },
+  chevron: { paddingLeft: space.xs },
   chevronText: { fontSize: fonts.size.lg, color: colors.inkSoft },
   pill: { paddingVertical: 3, paddingHorizontal: space.sm, borderRadius: radius.pill, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
   pillOn: { backgroundColor: colors.route, borderColor: colors.route },
@@ -548,13 +697,15 @@ const styles = StyleSheet.create({
   directionsText: { fontSize: fonts.size.xs, color: colors.card, fontWeight: '700' },
   retry: { fontSize: fonts.size.xs, color: colors.accent, fontWeight: '700' },
   legText: { fontSize: fonts.size.sm, color: colors.inkSoft },
-  addNote: { paddingVertical: space.xs, paddingHorizontal: space.sm, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line, borderStyle: 'dashed' },
-  addNoteText: { fontSize: fonts.size.xs, color: colors.inkSoft, fontWeight: '600' },
+  addNote: { alignSelf: 'center', width: 56, height: 56, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.line, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card },
+  addNotePlus: { fontSize: 22, lineHeight: 24, color: colors.ink, fontWeight: '300' },
+  addNoteText: { fontSize: 11, color: colors.inkSoft, fontWeight: '600' },
   noteMemo: { fontSize: fonts.size.xs, color: colors.inkSoft, marginLeft: 24 },
   noteDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.route },
-  noteCard: { flex: 1, flexDirection: 'row', alignItems: 'center', marginVertical: space.xs, padding: space.md, borderRadius: radius.lg, backgroundColor: colors.card, gap: space.sm, borderWidth: 1, borderColor: colors.line },
+  noteCard: { flexDirection: 'row', alignItems: 'center', marginVertical: space.xs, padding: space.md, borderRadius: radius.lg, backgroundColor: colors.card, gap: space.sm, borderWidth: 1, borderColor: colors.line },
   modes: { flexDirection: 'row', padding: 2, borderRadius: radius.pill, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
   hiddenCard: { padding: space.md, borderStyle: 'dashed' },
+  editCard: { padding: space.md },
   fab: {
     position: 'absolute',
     right: space.lg,

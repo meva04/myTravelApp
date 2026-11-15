@@ -17,22 +17,36 @@ type Props = {
   compact?: boolean;
   /** 처음 열 때 새 항목 칸에 바로 입력 */
   autoFocus?: boolean;
+  /** 새 항목 칸에 적는 중인 글 (저장 버튼을 누를 때 함께 넣으려고) */
+  onDraft?: (text: string) => void;
 };
 
-export function Checklist({ items, onChange, editable = false, placeholder, max, compact = false, autoFocus = false }: Props) {
-  // 마지막의 빈 칸에 글자를 치면 그 칸이 그대로 새 항목이 된다 (같은 key 라 입력 중 포커스가 유지된다).
+/** 적는 중이던 새 항목까지 포함한 목록 */
+export function withDraft(items: CheckItem[], draft: string): CheckItem[] {
+  return draft.trim() ? [...items, { id: `d${Date.now()}`, text: draft.trim(), done: false }] : items;
+}
+
+export function Checklist({ items, onChange, editable = false, placeholder, max, compact = false, autoFocus = false, onDraft }: Props) {
+  // 새 항목 칸은 글을 다 적고 줄바꿈(완료)하거나 칸을 떠날 때 항목이 된다.
+  // (글자마다 항목을 만들면 한글 조합이 끊기고 아래에 빈 칸이 계속 생긴다)
   const seq = useRef(0);
-  const [newId, setNewId] = useState(() => `n${Date.now()}`);
+  const [draft, setDraftState] = useState('');
+  const setDraft = (v: string) => {
+    setDraftState(v);
+    onDraft?.(v);
+  };
   const newInput = useRef<ComponentRef<typeof TextInput>>(null);
 
   const shown = !editable && max !== undefined ? items.slice(0, max) : items;
   const rest = items.length - shown.length;
   const update = (id: string, text: string) => onChange(items.map((it) => (it.id === id ? { ...it, text } : it)));
   const remove = (id: string) => onChange(items.filter((it) => it.id !== id));
-  const addFrom = (text: string) => {
+  const commit = (keepFocus: boolean) => {
+    const text = draft.trim();
     if (text === '') return;
-    onChange([...items, { id: newId, text, done: false }]);
-    setNewId(`n${Date.now()}-${++seq.current}`);
+    onChange([...items, { id: `n${Date.now()}-${++seq.current}`, text, done: false }]);
+    setDraft('');
+    if (keepFocus) requestAnimationFrame(() => newInput.current?.focus());
   };
 
   return (
@@ -69,18 +83,21 @@ export function Checklist({ items, onChange, editable = false, placeholder, max,
             )}
           </View>
         ) : (
-          // 새 항목 칸. 글자를 치면 같은 key 의 항목으로 바뀌어 입력 칸이 그대로 이어진다.
-          <View key={newId} style={styles.row}>
+          // 새 항목 칸
+          <View key="new" style={styles.row}>
             <Pressable disabled style={[styles.box, styles.boxNew]} />
             <TextInput
               ref={newInput}
               style={[styles.text, styles.input]}
               placeholder={placeholder ?? t('check.add')}
               placeholderTextColor={colors.inkSoft}
-              value=""
-              onChangeText={addFrom}
+              value={draft}
+              onChangeText={setDraft}
+              onSubmitEditing={() => commit(true)}
+              submitBehavior="submit"
+              onBlur={() => commit(false)}
               autoFocus={autoFocus}
-              returnKeyType="done"
+              returnKeyType="next"
             />
           </View>
         ),

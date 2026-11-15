@@ -12,14 +12,14 @@ async function setup() {
   const [day] = await sv.repo.listDays(trip.id);
   const a = await appendStop(sv, day.id, { placeId: null, name: '교토역', lat: 1, lng: 1 });
   await appendStop(sv, day.id, { placeId: null, name: '도미센', lat: 1, lng: 1 });
-  const note = await sv.repo.addNote(a.id, '이코카 구입');
+  const note = await sv.repo.addNote(day.id, a.id, '이코카 구입');
   return { sv, trip, day, a, note };
 }
 
 test('a travel note has its own record, photos and expenses like a place', async () => {
   const { sv, trip, note } = await setup();
   const picked = { uri: 'n.jpg', takenAt: '2027-03-01T00:00:00.000Z', lat: null, lng: null };
-  await render(withServices(sv, <NoteScreen noteId={note.id} pickPhoto={async () => picked} resolvePhoto={(u) => u} />));
+  await render(withServices(sv, <NoteScreen noteId={note.id} pickPhoto={async () => [picked]} resolvePhoto={(u) => u} />));
   expect(await screen.findByText('이동 메모 · 교토역 → 도미센')).toBeTruthy();
   expect(screen.getByDisplayValue('이코카 구입')).toBeTruthy();
 
@@ -46,7 +46,7 @@ test('a travel note can be deleted together with its photos', async () => {
   const removedFiles: string[] = [];
   const done = jest.fn();
   jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => buttons?.find((b) => b.style === 'destructive')?.onPress?.());
-  await render(withServices(sv, <NoteScreen noteId={note.id} pickPhoto={async () => null} resolvePhoto={(u) => u} onPhotoRemoved={(u) => void removedFiles.push(u)} onRemoved={done} />));
+  await render(withServices(sv, <NoteScreen noteId={note.id} pickPhoto={async () => []} resolvePhoto={(u) => u} onPhotoRemoved={(u) => void removedFiles.push(u)} onRemoved={done} />));
   await fireEvent.press(await screen.findByText('이 이동 메모 삭제'));
   await waitFor(() => expect(done).toHaveBeenCalled());
   expect(await sv.repo.getNote(note.id)).toBeNull();

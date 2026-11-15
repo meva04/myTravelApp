@@ -36,7 +36,13 @@ export type Stop = {
   legNote: string;
   /** 이번 여행에서 못 가게 되어 계획에서 숨긴 장소. 경로·지도·도착 감지에서 빠진다. */
   skipped: boolean;
+  /** 장소 종류 (아이콘). 구글 장소 유형에서 정한다. 모르면 null. */
+  kind?: PlaceKind | null;
+  /** 숙소·교통편 예약에서 만들어진 장소면 그 예약 id. 예약을 고치면 함께 바뀐다. */
+  bookingId?: Id | null;
 };
+
+export type PlaceKind = 'food' | 'cafe' | 'bar' | 'sight' | 'museum' | 'park' | 'shop' | 'lodging' | 'airport' | 'station' | 'port' | 'other';
 
 export type RouteOption = {
   id: Id;
@@ -57,7 +63,8 @@ export type Leg = {
 
 export type Photo = {
   id: Id;
-  stopId: Id;
+  /** 장소 사진이면 그 장소 (이동 메모 사진이면 null) */
+  stopId: Id | null;
   uri: string;
   takenAt: string;
   lat: number | null;
@@ -71,13 +78,13 @@ export type Photo = {
 };
 
 /**
- * 이동 메모: 한 장소를 떠나 다음 장소로 가는 길의 할 일 하나. 일정에서 두 장소 사이에 카드로 보이고,
+ * 이동 메모: 가는 길의 할 일 하나. 장소와 같은 급의 카드로 그날 일정 안에 놓이고 (순서는 장소와 같은 줄을 쓴다),
  * 장소처럼 기록·사진·비용을 붙일 수 있다.
  */
 export type Note = {
   id: Id;
-  /** 출발하는 장소 */
-  stopId: Id;
+  dayId: Id;
+  /** 그날 일정 안의 자리. 장소의 order 와 같은 줄에서 센다. */
   order: number;
   text: string;
   done: boolean;
@@ -96,4 +103,61 @@ export type Expense = {
   memo: string;
   /** 이동 메모에 붙인 비용이면 그 메모 id */
   noteId?: Id | null;
+};
+
+/** 그날 일정의 한 칸: 장소 또는 이동 메모 */
+export type SeqItem = { kind: 'stop'; id: Id } | { kind: 'note'; id: Id };
+
+export type BookingKind = 'lodging' | 'flight' | 'train' | 'ship' | 'bus';
+export const TRANSPORT_KINDS: BookingKind[] = ['flight', 'train', 'ship', 'bus'];
+
+/** 공항·역·항구·숙소 같은 예약의 장소 */
+export type BookingPlace = { name: string; placeId: string | null; lat: number; lng: number; code?: string; address?: string };
+
+/** 숙소·교통편 예약. 저장하면 날짜에 맞게 일정에 장소로 들어간다. */
+export type Booking = {
+  id: Id;
+  tripId: Id;
+  kind: BookingKind;
+  /** 숙소 이름, 또는 편명·열차번호 */
+  title: string;
+  confirmation?: string;
+  // 숙소
+  place?: BookingPlace;
+  checkIn?: string; // 'YYYY-MM-DD'
+  checkOut?: string;
+  checkInTime?: string; // 'HH:mm'
+  checkOutTime?: string;
+  // 교통편
+  carrier?: string;
+  from?: BookingPlace;
+  to?: BookingPlace;
+  departDate?: string;
+  departTime?: string;
+  arriveDate?: string;
+  arriveTime?: string;
+  terminal?: string;
+  gate?: string;
+  /** 좌석 (예: 32A, 12D) */
+  seat?: string;
+  /** 기차 호차 */
+  car?: string;
+  /** 기종·열차 종류·배 이름 (예: Boeing 787-9, KTX-산천) */
+  vehicle?: string;
+  /** 게이트를 마지막으로 확인한 시각 (ISO) */
+  checkedAt?: string;
+};
+
+/** 구글 지도 등에서 가져온 저장한 장소 */
+export type SavedPlace = {
+  id: Id;
+  source: 'google' | 'naver';
+  /** 가져온 목록 이름 (파일 이름) */
+  list: string;
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  placeId: string | null;
+  note: string;
 };

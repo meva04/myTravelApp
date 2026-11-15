@@ -9,7 +9,8 @@
     "userInterfaceStyle": "light",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.example.tripnote",
+      "bundleIdentifier": "com.raytripnote.app",
+      "appleTeamId": "NFJTNBHS3J",
       "supportsTablet": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -44,7 +45,12 @@
           "isIosBackgroundLocationEnabled": true
         }
       ],
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "enableRemoteNotifications": false
+        }
+      ],
       [
         "expo-media-library",
         {
@@ -63,6 +69,16 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "6c0c9957-67c8-4119-83e4-3486615063dc"
+      }
     }
   }
 }

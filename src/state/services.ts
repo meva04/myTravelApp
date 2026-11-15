@@ -5,11 +5,14 @@ import { openExpoDb } from '@/db/expoDb';
 import { makeRepo, type Repo } from '@/db/repo';
 import { makePlaces, type Places } from '@/google/places';
 import { makeRoutes, type Routes } from '@/google/routes';
+import { makeFlights, type Flights } from '@/travel/flights';
 
 export type Services = {
   repo: Repo;
   places: Places;
   routes: Routes;
+  /** 편명으로 항공편 찾기 (키가 없으면 available=false) */
+  flights: Flights;
   newId: () => string;
   /** 일정이나 도착 상태가 바뀌었을 때 (도착 감지 대상을 다시 등록) */
   onItineraryChanged: () => void;
@@ -22,7 +25,14 @@ export function getServices(): Promise<Services> {
     const repo = makeRepo(await openExpoDb(), randomUUID);
     await repo.migrate();
     const key = process.env.EXPO_PUBLIC_GOOGLE_API_KEY ?? '';
-    return { repo, places: makePlaces(fetch, key), routes: makeRoutes(fetch, key, randomUUID), newId: randomUUID, onItineraryChanged: () => {} };
+    return {
+      repo,
+      places: makePlaces(fetch, key),
+      routes: makeRoutes(fetch, key, randomUUID),
+      flights: makeFlights(fetch, process.env.EXPO_PUBLIC_AERODATABOX_KEY ?? ''),
+      newId: randomUUID,
+      onItineraryChanged: () => {},
+    };
   })();
   return ready;
 }

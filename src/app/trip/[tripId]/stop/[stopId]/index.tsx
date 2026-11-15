@@ -19,6 +19,7 @@ export default function StopRoute() {
       onRemoved={() => router.back()}
       onFindNearby={() => router.push({ pathname: '/trip/[tripId]/stop/[stopId]/photos', params: { tripId, stopId } })}
       openUrl={(url) => void Linking.openURL(url)}
+      onEditBooking={(id) => router.push({ pathname: '/trip/[tripId]/bookings', params: { tripId, edit: id } })}
     />
   );
 }

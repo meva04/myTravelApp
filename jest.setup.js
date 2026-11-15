@@ -49,3 +49,13 @@ jest.mock('@expo/ui/swift-ui', () => {
   };
 });
 jest.mock('@expo/ui/swift-ui/modifiers', () => ({ datePickerStyle: () => ({}), labelsHidden: () => ({}) }));
+// 밀어서 삭제: 테스트에서는 내용과 삭제 버튼을 함께 그대로 보여 준다.
+jest.mock('react-native-gesture-handler/ReanimatedSwipeable', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  const Swipeable = React.forwardRef((props, ref) => {
+    React.useImperativeHandle(ref, () => ({ close: () => {}, openLeft: () => {}, openRight: () => {}, reset: () => {} }));
+    return React.createElement(View, null, props.children, props.renderRightActions?.({ value: 0 }, { value: 0 }, { close: () => {} }));
+  });
+  return { __esModule: true, default: Swipeable };
+});

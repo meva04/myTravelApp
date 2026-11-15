@@ -24,3 +24,22 @@ export function targetOf(sel: NonNullable<Selection>, stops: Stop[], legs: Leg[]
   const from = stops.find((s) => s.id === leg.fromStopId);
   return from ? { lat: from.lat, lng: from.lng } : null;
 }
+
+/** 지도 위 핀 하나. 같은 자리(약 30m 안)의 장소들은 한 핀에 번호를 함께 적는다 (예: 숙소에서 나가 숙소로 돌아오는 날). */
+export type Pin = { lat: number; lng: number; stops: { stop: Stop; index: number }[] };
+
+export function groupPins(stops: Stop[], meters = 30): Pin[] {
+  const pins: Pin[] = [];
+  stops.forEach((stop, index) => {
+    const near = pins.find((p) => Math.abs(p.lat - stop.lat) * 111000 < meters && Math.abs(p.lng - stop.lng) * 111000 * Math.cos((stop.lat * Math.PI) / 180) < meters);
+    if (near) near.stops.push({ stop, index });
+    else pins.push({ lat: stop.lat, lng: stop.lng, stops: [{ stop, index }] });
+  });
+  return pins;
+}
+
+/** 핀 글자: '1', '1·5', 모두 도착했으면 '✓' */
+export function pinLabel(pin: Pin): string {
+  if (pin.stops.every((s) => s.stop.arrivedAt)) return '✓';
+  return pin.stops.map((s) => s.index + 1).join('·');
+}

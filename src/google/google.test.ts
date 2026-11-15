@@ -1,5 +1,5 @@
 import { GoogleApiError, OfflineError } from './errors';
-import { makePlaces } from './places';
+import { kindFromTypes, makePlaces } from './places';
 import { decodePolyline } from './polyline';
 import { makeRoutes } from './routes';
 
@@ -22,7 +22,7 @@ test('search maps places to hits and sends the query', async () => {
     json({ places: [{ id: 'p1', displayName: { text: '센소지' }, formattedAddress: '도쿄', location: { latitude: 35.71, longitude: 139.79 } }] }),
   );
   const hits = await makePlaces(fetchFn as unknown as typeof fetch, 'KEY').search('센소지', { lat: 35.7, lng: 139.7 });
-  expect(hits).toEqual([{ placeId: 'p1', name: '센소지', address: '도쿄', lat: 35.71, lng: 139.79 }]);
+  expect(hits).toEqual([{ placeId: 'p1', name: '센소지', address: '도쿄', lat: 35.71, lng: 139.79, kind: null }]);
   const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
   expect(url).toBe('https://places.googleapis.com/v1/places:searchText');
   expect(JSON.parse(init.body as string).textQuery).toBe('센소지');
@@ -43,12 +43,12 @@ test('details asks only for the address and photos (cheapest tier), and is cache
   );
   const places = makePlaces(fetchFn as unknown as typeof fetch, 'KEY');
   const d = await places.details('p1');
-  expect(d).toEqual({ placeId: 'p1', address: '일본 도쿄도 다이토구 아사쿠사 2-3-1', photoUrls: expect.any(Array), photoAuthors: ['Kim'] });
+  expect(d).toEqual({ placeId: 'p1', address: '일본 도쿄도 다이토구 아사쿠사 2-3-1', photoUrls: expect.any(Array), photoAuthors: ['Kim'], kind: null });
   expect(d.photoUrls).toEqual(['https://places.googleapis.com/v1/places/p1/photos/abc/media?maxWidthPx=1200&key=KEY']);
   const [url, init] = fetchFn.mock.calls[0];
   expect(url).toContain('languageCode=ko');
   // 이름(Pro)·별점·영업시간·웹사이트(Enterprise)처럼 비싼 항목은 요청하지 않는다
-  expect((init.headers as Record<string, string>)['X-Goog-FieldMask']).toBe('id,formattedAddress,photos');
+  expect((init.headers as Record<string, string>)['X-Goog-FieldMask']).toBe('id,formattedAddress,photos,types');
   await places.details('p1');
   expect(fetchFn).toHaveBeenCalledTimes(1);
 });
@@ -104,4 +104,12 @@ test('a non-JSON body is an api error, not a crash', async () => {
 test('places without a location are left out of search results', async () => {
   const fetchFn = (async () => json({ places: [{ id: 'p1', displayName: { text: 'a' } }, { id: 'p2', displayName: { text: 'b' }, location: { latitude: 1, longitude: 2 } }] })) as unknown as typeof fetch;
   expect((await makePlaces(fetchFn, 'KEY').search('x')).map((h) => h.placeId)).toEqual(['p2']);
+});
+
+test('place types become icon kinds: restaurants, sights, hotels', () => {
+  expect(kindFromTypes(['ramen_restaurant', 'restaurant', 'food'])).toBe('food');
+  expect(kindFromTypes(['tourist_attraction', 'point_of_interest'])).toBe('sight');
+  expect(kindFromTypes(['lodging', 'hotel'])).toBe('lodging');
+  expect(kindFromTypes(['cafe', 'food'])).toBe('cafe');
+  expect(kindFromTypes([])).toBeNull();
 });

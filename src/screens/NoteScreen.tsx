@@ -13,7 +13,7 @@ import { Button, Card, Chip, Field, Row, Screen, Txt } from '@/ui/kit';
 
 type Props = {
   noteId: string;
-  pickPhoto: (source: 'library' | 'camera') => Promise<Omit<Photo, 'id' | 'stopId'> | null>;
+  pickPhoto: (source: 'library' | 'camera') => Promise<Omit<Photo, 'id' | 'stopId'>[]>;
   resolvePhoto: (uri: string) => string;
   onPhotoRemoved?: (uri: string) => void;
   /** 메모를 지운 뒤 (이전 화면으로 돌아가기) */
@@ -26,12 +26,16 @@ export function NoteScreen({ noteId, pickPhoto, resolvePhoto, onPhotoRemoved, on
   const { repo } = sv;
   const { data, reload } = useLoad(async () => {
     const note = await repo.getNote(noteId);
-    const from = note && (await repo.getStop(note.stopId));
-    const day = from && (await repo.getDay(from.dayId));
+    const day = note && (await repo.getDay(note.dayId));
     const trip = day && (await repo.getTrip(day.tripId));
-    if (!note || !from || !day || !trip) return null;
-    const stops = (await repo.listStops(day.id)).filter((s) => !s.skipped);
-    const to = stops[stops.findIndex((s) => s.id === from.id) + 1];
+    if (!note || !day || !trip) return null;
+    // 일정에서 이 메모 바로 앞·뒤의 장소 (가는 길)
+    const stops = await repo.listStops(day.id);
+    const seq = await repo.listSequence(day.id);
+    const at = seq.findIndex((x) => x.id === noteId);
+    const visible = (id: string) => stops.find((s) => s.id === id && !s.skipped);
+    const from = seq.slice(0, at).reverse().map((x) => (x.kind === 'stop' ? visible(x.id) : undefined)).find(Boolean);
+    const to = seq.slice(at + 1).map((x) => (x.kind === 'stop' ? visible(x.id) : undefined)).find(Boolean);
     const expenses = (await repo.listExpenses(trip.id)).filter((e) => e.noteId === noteId);
     return { note, from, to, day, trip, expenses, photos: await repo.listNotePhotos(noteId) };
   }, [noteId, refreshKey]);
@@ -57,9 +61,7 @@ export function NoteScreen({ noteId, pickPhoto, resolvePhoto, onPhotoRemoved, on
     reload();
   };
   const addPhoto = async (source: 'library' | 'camera') => {
-    const picked = await pickPhoto(source);
-    if (!picked) return;
-    await repo.addPhoto({ ...picked, stopId: from.id, noteId });
+    for (const picked of await pickPhoto(source)) await repo.addPhoto({ ...picked, stopId: null, noteId });
     reload();
   };
   const removePhoto = async (p: Photo) => {
@@ -88,7 +90,7 @@ export function NoteScreen({ noteId, pickPhoto, resolvePhoto, onPhotoRemoved, on
   return (
     <Screen>
       <View style={styles.head}>
-        <Text style={styles.route}>{to ? t('note.route', { from: from.name, to: to.name }) : t('note.from', { from: from.name })}</Text>
+        <Text style={styles.route}>{from && to ? t('note.route', { from: from.name, to: to.name }) : from ? t('note.from', { from: from.name }) : to ? t('note.to', { to: to.name }) : t('leg.note')}</Text>
         <View style={styles.titleRow}>
           <Pressable
             accessibilityRole="checkbox"

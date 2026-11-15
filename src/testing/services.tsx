@@ -6,6 +6,7 @@ import { makeRepo } from '@/db/repo';
 import { makeTestDb } from '@/db/testDb';
 import type { Places } from '@/google/places';
 import type { Routes } from '@/google/routes';
+import type { Flights } from '@/travel/flights';
 import { ServicesContext } from '@/state/ServicesContext';
 import type { Services } from '@/state/services';
 
@@ -19,7 +20,8 @@ export async function makeTestServices(over: Partial<Services> = {}): Promise<Se
   const routes: Routes = {
     compute: async () => ({ id: randomUUID(), kind: 'default', polyline: [], distanceMeters: 0, durationSeconds: 0 }),
   };
-  return { repo, places, routes, newId: randomUUID, onItineraryChanged: () => {}, ...over };
+  const flights: Flights = { available: false, lookup: async () => null };
+  return { repo, places, routes, flights, newId: randomUUID, onItineraryChanged: () => {}, ...over };
 }
 
 export function withServices(services: Services, ui: ReactElement) {

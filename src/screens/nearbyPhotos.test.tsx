@@ -61,6 +61,6 @@ test('a refused photo library says how to allow it', async () => {
 test('the plan note shows under the place in the itinerary', async () => {
   const { sv, trip } = await setup({ planNote: '초밥 / 예약완료' });
   const noop = () => {};
-  await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={noop} onOpenMap={noop} onOpenStop={noop} onExpenses={noop} onSettings={noop} />));
+  await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={noop} onOpenStop={noop} onExpenses={noop} onSettings={noop} />));
   expect(await screen.findByText('초밥 / 예약완료')).toBeTruthy();
 });

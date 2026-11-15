@@ -17,7 +17,7 @@ async function setup(over: Partial<Stop> = {}) {
   const [day] = await sv.repo.listDays(trip.id);
   const stop: Stop = { id: 's1', dayId: day.id, order: 0, placeId: 'p1', name: '센소지', lat: 35, lng: 139, plannedTime: null, arrivedAt: null, arrivalMethod: null, memo: '', planNote: '', skipped: false, legNote: '', ...over };
   await sv.repo.saveStops(day.id, [stop]);
-  const ui = withServices(sv, <StopScreen stopId="s1" pickPhoto={async () => null} resolvePhoto={(u) => u} openUrl={() => {}} now={() => '2027-03-01T03:04:00.000Z'} />);
+  const ui = withServices(sv, <StopScreen stopId="s1" pickPhoto={async () => []} resolvePhoto={(u) => u} openUrl={() => {}} now={() => '2027-03-01T03:04:00.000Z'} />);
   return { sv, trip, ui, changed };
 }
 
@@ -72,7 +72,7 @@ test('the hero shows the name, the address and a Google photo with its credit', 
   const { sv } = await setup();
   sv.places.details = async () => details;
   const opened: string[] = [];
-  await render(withServices(sv, <StopScreen stopId="s1" pickPhoto={async () => null} resolvePhoto={(u) => `file:///${u}`} openUrl={(u) => void opened.push(u)} />));
+  await render(withServices(sv, <StopScreen stopId="s1" pickPhoto={async () => []} resolvePhoto={(u) => `file:///${u}`} openUrl={(u) => void opened.push(u)} />));
   expect(await screen.findByText('일본 도쿄도 다이토구 아사쿠사 2-3-1')).toBeTruthy();
   expect(screen.getByText('센소지')).toBeTruthy();
   expect(screen.getByText('사진: Kim · Google')).toBeTruthy();
@@ -88,7 +88,7 @@ test('after visiting, my own photos replace the Google photo; a photo marked as 
   sv.places.details = async () => details;
   await sv.repo.addPhoto({ stopId: 's1', uri: 'a.jpg', takenAt: '2027-03-01T01:10:00.000Z', lat: null, lng: null });
   const b = await sv.repo.addPhoto({ stopId: 's1', uri: 'b.jpg', takenAt: '2027-03-01T01:20:00.000Z', lat: null, lng: null });
-  await render(withServices(sv, <StopScreen stopId="s1" pickPhoto={async () => null} resolvePhoto={(u) => `file:///${u}`} openUrl={() => {}} />));
+  await render(withServices(sv, <StopScreen stopId="s1" pickPhoto={async () => []} resolvePhoto={(u) => `file:///${u}`} openUrl={() => {}} />));
   await screen.findByText('일본 도쿄도 다이토구 아사쿠사 2-3-1');
   expect(heroUri()).toBe('file:///a.jpg'); // 내 사진 두 장이 슬라이드로 (첫 장부터)
   expect(screen.queryByText(/사진: Kim/)).toBeNull();
@@ -132,6 +132,7 @@ test('editing the plan note on a stale screen does not erase a background arriva
   const note = await screen.findByPlaceholderText(/할 일 추가/);
   await sv.repo.markStopArrived('s1', '2027-03-01T01:00:00.000Z', 'auto');
   await fireEvent.changeText(note, '좋았다');
+  await fireEvent(note, 'submitEditing');
   await waitFor(async () => expect(await sv.repo.getStop('s1')).toMatchObject({ planNote: '[ ] 좋았다', arrivedAt: '2027-03-01T01:00:00.000Z' }));
 });
 
@@ -145,8 +146,14 @@ test('an expense in a currency without a rate is shown next to the subtotal', as
 test('the plan is a checklist: items can be added, checked off and removed', async () => {
   const { sv, ui } = await setup({ memo: '비가 왔다' });
   await render(ui);
-  await fireEvent.changeText(await screen.findByPlaceholderText(/할 일 추가/), '초밥 예약 12시');
+  // 한 글자 칠 때마다 항목이 생기지 않고, 다 적고 완료(줄바꿈)를 눌러야 항목이 된다
+  const input = await screen.findByPlaceholderText(/할 일 추가/);
+  await fireEvent.changeText(input, '초');
+  expect(screen.queryByRole('checkbox', { name: '초' })).toBeNull();
+  await fireEvent.changeText(input, '초밥 예약 12시');
+  await fireEvent(input, 'submitEditing');
   await fireEvent.changeText(screen.getByPlaceholderText(/할 일 추가/), '환전');
+  await fireEvent(screen.getByPlaceholderText(/할 일 추가/), 'blur');
   await waitFor(async () => expect((await sv.repo.getStop('s1'))?.planNote).toBe('[ ] 초밥 예약 12시\n[ ] 환전'));
   await fireEvent.press(screen.getByRole('checkbox', { name: '초밥 예약 12시' }));
   await waitFor(async () => expect((await sv.repo.getStop('s1'))?.planNote).toBe('[x] 초밥 예약 12시\n[ ] 환전'));
@@ -155,7 +162,7 @@ test('the plan is a checklist: items can be added, checked off and removed', asy
 });
 
 const open = (sv: Awaited<ReturnType<typeof setup>>['sv'], prompt: 'arrival' | 'overdue' | 'reschedule' | 'skip', onRemoved = () => {}) =>
-  withServices(sv, <StopScreen stopId="s1" prompt={prompt} onRemoved={onRemoved} pickPhoto={async () => null} resolvePhoto={(u) => u} openUrl={() => {}} now={() => '2027-03-01T03:04:00.000Z'} />);
+  withServices(sv, <StopScreen stopId="s1" prompt={prompt} onRemoved={onRemoved} pickPhoto={async () => []} resolvePhoto={(u) => u} openUrl={() => {}} now={() => '2027-03-01T03:04:00.000Z'} />);
 
 test('opened from the arrival alert, it asks and "가는 중" just closes the question', async () => {
   const { sv } = await setup();

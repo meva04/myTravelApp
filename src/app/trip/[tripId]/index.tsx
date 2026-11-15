@@ -6,6 +6,7 @@ import { Pressable, Text, View } from 'react-native';
 import type { Trip } from '@/domain/types';
 import { t } from '@/i18n/ko';
 import { localToday } from '@/location/geofence';
+import { resolvePhoto } from '@/records/photos';
 import { TripHomeScreen } from '@/screens/TripHomeScreen';
 import { useFocusKey } from '@/state/useFocusKey';
 import { colors, fonts, space } from '@/theme/tokens';
@@ -16,7 +17,7 @@ function dateRange(start: string, end: string): string {
   return `${dot(start)}-${start.slice(0, 4) === end.slice(0, 4) ? dot(end.slice(5)) : dot(end)}`;
 }
 
-function HeaderIcon({ name, label, onPress }: { name: 'wonsign.circle' | 'gearshape'; label: string; onPress: () => void }) {
+function HeaderIcon({ name, label, onPress }: { name: 'wonsign.circle' | 'gearshape' | 'suitcase'; label: string; onPress: () => void }) {
   return (
     <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} hitSlop={8} style={{ paddingHorizontal: space.xs }}>
       <SymbolView name={name} size={24} tintColor={colors.ink} fallback={<Text style={{ color: colors.ink }}>{label}</Text>} />
@@ -38,6 +39,7 @@ export default function TripHome() {
         ),
         headerRight: () => (
           <View style={{ flexDirection: 'row', gap: space.md }}>
+            <HeaderIcon name="suitcase" label={t('trip.bookingsLink')} onPress={() => router.push({ pathname: '/trip/[tripId]/bookings', params: { tripId } })} />
             <HeaderIcon name="wonsign.circle" label={t('trip.expenses')} onPress={() => router.push({ pathname: '/trip/[tripId]/expenses', params: { tripId } })} />
             <HeaderIcon name="gearshape" label={t('trip.settings')} onPress={() => router.push({ pathname: '/trip/[tripId]/settings', params: { tripId } })} />
           </View>
@@ -50,9 +52,9 @@ export default function TripHome() {
       tripId={tripId}
       refreshKey={useFocusKey()}
       today={localToday()}
+      resolvePhoto={resolvePhoto}
       onTrip={onTrip}
       onAddStop={(dayId) => router.push({ pathname: '/trip/[tripId]/day/[dayId]/add', params: { tripId, dayId } })}
-      onOpenMap={(dayId) => router.push({ pathname: '/trip/[tripId]/day/[dayId]', params: { tripId, dayId } })}
       onOpenStop={(stopId) => router.push({ pathname: '/trip/[tripId]/stop/[stopId]', params: { tripId, stopId } })}
       onOpenNote={(noteId) => router.push({ pathname: '/trip/[tripId]/note/[noteId]', params: { tripId, noteId } })}
       onExpenses={() => router.push({ pathname: '/trip/[tripId]/expenses', params: { tripId } })}

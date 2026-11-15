@@ -18,11 +18,14 @@ import { Button, Card, Chip, Field, Row, Screen, Txt } from '@/ui/kit';
 import { Checklist } from '@/ui/Checklist';
 import { DateField, TimeField } from '@/ui/PickerField';
 import { PlaceHero } from '@/ui/PlaceHero';
+import { heroImages } from '@/ui/PlaceVisual';
+import { SeatMap } from '@/ui/SeatMap';
+import { bookingLine } from '@/domain/bookings';
 import { Stamp } from '@/ui/Stamp';
 
 type Props = {
   stopId: string;
-  pickPhoto: (source: 'library' | 'camera') => Promise<Omit<Photo, 'id' | 'stopId'> | null>;
+  pickPhoto: (source: 'library' | 'camera') => Promise<Omit<Photo, 'id' | 'stopId'>[]>;
   resolvePhoto: (uri: string) => string;
   openUrl: (url: string) => void;
   now?: () => string;
@@ -33,12 +36,14 @@ type Props = {
   prompt?: StopPrompt;
   /** 장소를 지운 뒤 (이전 화면으로 돌아가기) */
   onRemoved?: () => void;
+  /** 예약으로 만든 장소면 그 예약을 고치는 화면을 연다 */
+  onEditBooking?: (bookingId: string) => void;
   refreshKey?: number;
 };
 
 type Info = { state: 'loading' | 'offline' | 'error' | 'none' } | { state: 'ready'; details: PlaceDetails };
 
-export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () => new Date().toISOString(), onPhotoRemoved, onFindNearby, prompt, onRemoved, refreshKey = 0 }: Props) {
+export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () => new Date().toISOString(), onPhotoRemoved, onFindNearby, prompt, onRemoved, onEditBooking, refreshKey = 0 }: Props) {
   const sv = useServices();
   const { repo } = sv;
   const { data, reload } = useLoad(async () => {
@@ -48,7 +53,8 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
     const trip = day && (await repo.getTrip(day.tripId));
     if (!day || !trip) return null;
     const expenses = (await repo.listExpenses(trip.id)).filter((e) => e.stopId === stopId);
-    return { stop, day, trip, expenses, days: await repo.listDays(trip.id), photos: await repo.listPhotos(stopId) };
+    const booking = stop.bookingId ? await repo.getBooking(stop.bookingId) : null;
+    return { stop, day, trip, expenses, booking, days: await repo.listDays(trip.id), photos: await repo.listPhotos(stopId) };
   }, [stopId, refreshKey]);
 
   const [memo, setMemo] = useState<string>();
@@ -102,14 +108,12 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
   }
 
   if (!data) return <Screen>{null}</Screen>;
-  const { stop, day, trip, expenses, days, photos } = data;
+  const { stop, day, trip, expenses, days, photos, booking } = data;
   const visited = stop.arrivedAt !== null;
   const details = info.state === 'ready' ? info.details : undefined;
   // 머리 사진: 내가 대표로 지정한 사진 > 방문해서 찍은 사진(슬라이드) > 구글 대표 사진
-  const covers = photos.filter((p) => p.cover);
-  const mine = covers.length ? covers : visited ? photos : [];
-  const heroIsGoogle = mine.length === 0;
-  const heroImages = heroIsGoogle ? (details?.photoUrls.slice(0, 1) ?? []) : mine.map((p) => resolvePhoto(p.uri));
+  const hero = heroImages(stop, photos, details?.photoUrls ?? [], resolvePhoto);
+  const heroIsGoogle = hero.google;
 
   // 화면의 옛 사본으로 다른 칸을 덮어쓰지 않도록, 바꾼 칸만 저장한다.
   const arrive = async () => {
@@ -141,9 +145,7 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
     void repo.setStopPlanNote(stopId, serializeChecklist(next));
   };
   const addPhoto = async (source: 'library' | 'camera') => {
-    const picked = await pickPhoto(source);
-    if (!picked) return;
-    await repo.addPhoto({ ...picked, stopId });
+    for (const picked of await pickPhoto(source)) await repo.addPhoto({ ...picked, stopId });
     reload();
   };
   const toggleCover = async (p: Photo) => {
@@ -163,12 +165,24 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
   return (
     <Screen>
       <PlaceHero
-        images={heroImages}
+        images={hero.images}
         name={stop.name}
         address={details?.address}
         credit={heroIsGoogle ? details?.photoAuthors[0] : undefined}
         onOpenGoogle={() => openUrl(googleMapsUrl(stop))}
       />
+
+      {booking && (
+        <Card>
+          <Txt kind="heading">{t('booking.info')}</Txt>
+          {bookingLine(booking, stop.name) !== '' && <Txt>{bookingLine(booking, stop.name)}</Txt>}
+          {booking.kind !== 'lodging' && booking.from && booking.to && (
+            <Txt kind="soft">{`${booking.from.name} ${booking.departTime ?? ''} → ${booking.to.name} ${booking.arriveTime ?? ''}`}</Txt>
+          )}
+          <SeatMap booking={booking} />
+          {onEditBooking && <Button kind="ghost" label={t('booking.edit')} onPress={() => onEditBooking(booking.id)} />}
+        </Card>
+      )}
 
       {stop.skipped && (
         <Card style={{ borderColor: colors.inkSoft }}>

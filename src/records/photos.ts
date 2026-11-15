@@ -37,15 +37,21 @@ export async function importLibraryPhoto(p: LibraryPhoto): Promise<Omit<Photo, '
   };
 }
 
-export async function pickPhoto(source: 'library' | 'camera'): Promise<Omit<Photo, 'id' | 'stopId'> | null> {
-  const options: ImagePicker.ImagePickerOptions = { mediaTypes: ['images'], exif: true, quality: 0.8 };
+/** 사진첩에서는 여러 장을 한 번에 고를 수 있다. 고른 사진들을 보관하고 돌려준다 (취소하면 빈 목록). */
+export async function pickPhoto(source: 'library' | 'camera'): Promise<Omit<Photo, 'id' | 'stopId'>[]> {
+  const options: ImagePicker.ImagePickerOptions = {
+    mediaTypes: ['images'],
+    exif: true,
+    quality: 0.8,
+    ...(source === 'library' ? { allowsMultipleSelection: true, selectionLimit: 0, orderedSelection: true } : {}),
+  };
   if (source === 'camera') {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
-    if (!perm.granted) return null;
+    if (!perm.granted) return [];
   }
   const result = source === 'camera' ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options);
-  if (result.canceled || !result.assets[0]) return null;
-  return importPhoto(result.assets[0]);
+  if (result.canceled) return [];
+  return Promise.all(result.assets.map(importPhoto));
 }
 
 export function removePhotoFile(name: string): void {
