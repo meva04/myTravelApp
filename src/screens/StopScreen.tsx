@@ -13,6 +13,9 @@ import { deleteStop, moveStop, setSkipped } from '@/state/itineraryOps';
 import { useLoad, useServices } from '@/state/ServicesContext';
 import { colors, radius, space } from '@/theme/tokens';
 import { ExpenseForm } from '@/ui/ExpenseForm';
+import { currencyChoices, defaultCurrencyOf } from '@/domain/currency';
+import { localToday } from '@/location/clock';
+import { addExpense } from '@/state/expenseOps';
 import { formatAmounts, formatMoney, formatTime } from '@/ui/format';
 import { Button, Card, Chip, Field, Row, Screen, Txt } from '@/ui/kit';
 import { Checklist } from '@/ui/Checklist';
@@ -320,10 +323,11 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
         <Txt kind="soft">{t('stop.subtotal', { amount: formatMoney(subtotal, trip.baseCurrency) })}</Txt>
         {unconverted !== '' && <Txt kind="soft">{`${t('expense.unconverted')}: ${unconverted}`}</Txt>}
         <ExpenseForm
-          defaultCurrency={trip.baseCurrency}
+          defaultCurrency={defaultCurrencyOf(trip, localToday())}
+          currencies={currencyChoices(trip)}
           people={peopleOf(trip)}
           onAdd={async (e) => {
-            await repo.addExpense({ ...e, tripId: trip.id, date: day.date, stopId });
+            await addExpense(sv, trip, { ...e, date: day.date, stopId });
             reload();
           }}
         />

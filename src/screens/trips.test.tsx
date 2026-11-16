@@ -333,6 +333,30 @@ test('a past day opens as a diary of visited places, and can be switched back to
   expect(screen.getByText('B')).toBeTruthy();
 });
 
+test('in the diary, a photo opens full screen and the day ends with what was spent', async () => {
+  const { sv, trip, days } = await dayWithStops(['A'], 2);
+  const [a] = await sv.repo.listStops(days[0].id);
+  await sv.repo.markStopArrived(a.id, new Date(2027, 2, 1, 10, 0).toISOString(), 'manual');
+  await sv.repo.addPhoto({ stopId: a.id, uri: 'a.jpg', takenAt: '2027-03-01T01:00:00.000Z', lat: null, lng: null });
+  await sv.repo.addPhoto({ stopId: a.id, uri: 'b.jpg', takenAt: '2027-03-01T02:00:00.000Z', lat: null, lng: null });
+  await sv.repo.addExpense({ tripId: trip.id, date: '2027-03-01', stopId: a.id, amount: 12000, currency: 'KRW', category: 'food', memo: '점심' });
+  await sv.repo.addExpense({ tripId: trip.id, date: '2027-03-02', stopId: null, amount: 999, currency: 'KRW', category: 'etc', memo: '다른 날' });
+  await render(home(sv, trip.id, '2027-03-02'));
+  await fireEvent.press(await screen.findByText('1일차'));
+  const photos = await screen.findAllByLabelText('사진 크게 보기');
+  expect(photos).toHaveLength(2);
+  await fireEvent.press(photos[1]);
+  expect(await screen.findByTestId('photo-viewer')).toBeTruthy();
+  expect(screen.getByText('2 / 2')).toBeTruthy(); // 누른 사진부터, 옆으로 넘겨 다른 사진도 본다
+  await fireEvent.press(screen.getByLabelText('닫기'));
+  expect(screen.queryByTestId('photo-viewer')).toBeNull();
+
+  await fireEvent.press(screen.getByText('이 날 쓴 돈'));
+  expect(await screen.findByTestId('diary-spending')).toBeTruthy();
+  expect(screen.getByText('식비 · 점심')).toBeTruthy();
+  expect(screen.queryByText(/다른 날/)).toBeNull();
+});
+
 test('a hotel booking puts the hotel at the end of the check-in day and the start of the next', async () => {
   const sv = await makeTestServices();
   const trip = await sv.repo.createTrip({ name: 't', city: 'c', startDate: '2027-03-01', endDate: '2027-03-02', baseCurrency: 'KRW' });
@@ -376,4 +400,18 @@ test('a flight on a place shows its seat on a cabin drawing', async () => {
   await render(withServices(sv, <StopScreen stopId={stops[0].id} pickPhoto={async () => []} resolvePhoto={(u) => u} openUrl={noop} />));
   expect(await screen.findByLabelText('my-seat:32A')).toBeTruthy();
   expect(screen.getByText('32A · 창가')).toBeTruthy();
+});
+
+test('on a wide screen (unfolded iPhone Duo) the itinerary sits beside the map instead of in a sheet', async () => {
+  const { sv, trip } = await dayWithStops(['A', 'B']);
+  const rn = jest.requireActual('react-native') as typeof import('react-native');
+  const spy = jest.spyOn(rn, 'useWindowDimensions').mockReturnValue({ width: 669, height: 951, scale: 3, fontScale: 1 });
+  await render(home(sv, trip.id));
+  expect(await screen.findByTestId('split-layout')).toBeTruthy();
+  expect(screen.getByText('A')).toBeTruthy();
+  spy.mockReturnValue({ width: 402, height: 874, scale: 3, fontScale: 1 });
+  await render(home(sv, trip.id));
+  await screen.findAllByText('A');
+  expect(screen.queryByTestId('split-layout')).toBeNull();
+  spy.mockRestore();
 });

@@ -9,14 +9,18 @@ export type ExpenseInput = { amount: number; currency: string; category: Categor
 
 type Props = {
   defaultCurrency: string;
+  /** 바로 고를 통화들 (원화, 현지 통화, 달러). 그 밖의 통화는 "기타"에서 적는다. */
+  currencies?: string[];
   /** 여행에 함께하는 사람들 (나 포함). 둘 이상이면 낸 사람·나눌 사람을 고른다. */
   people?: { id: Id; name: string }[];
   onAdd: (e: ExpenseInput) => Promise<void | false> | void | false;
 };
 
-export function ExpenseForm({ defaultCurrency, people = [], onAdd }: Props) {
+export function ExpenseForm({ defaultCurrency, currencies = [], people = [], onAdd }: Props) {
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState(defaultCurrency);
+  const choices = [...new Set([...currencies, defaultCurrency])];
+  const [other, setOther] = useState(choices.length <= 1);
   const [category, setCategory] = useState<Category>('food');
   const [memo, setMemo] = useState('');
   const [invalid, setInvalid] = useState(false);
@@ -51,8 +55,25 @@ export function ExpenseForm({ defaultCurrency, people = [], onAdd }: Props) {
     <>
       <Row>
         <Field style={{ flex: 2 }} placeholder={t('expense.amount')} value={amount} onChangeText={setAmount} keyboardType="decimal-pad" />
-        <Field style={{ flex: 1 }} placeholder={t('expense.currency')} value={currency} onChangeText={setCurrency} autoCapitalize="characters" />
+        {other && <Field style={{ flex: 1 }} placeholder={t('expense.currency')} value={currency} onChangeText={setCurrency} autoCapitalize="characters" />}
       </Row>
+      {choices.length > 1 && (
+        <Row style={{ flexWrap: 'wrap' }}>
+          {choices.map((c) => (
+            <Chip
+              key={c}
+              label={c}
+              selected={!other && currency === c}
+              accessibilityLabel={`${t('expense.currency')} ${c}`}
+              onPress={() => {
+                setOther(false);
+                setCurrency(c);
+              }}
+            />
+          ))}
+          <Chip label={t('expense.otherCurrency')} selected={other} onPress={() => setOther(true)} />
+        </Row>
+      )}
       <Row style={{ flexWrap: 'wrap' }}>
         {CATEGORIES.map((c) => (
           <Chip key={c} label={t(`cat.${c}`)} selected={c === category} onPress={() => setCategory(c)} />

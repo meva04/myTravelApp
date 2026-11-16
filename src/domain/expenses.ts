@@ -12,6 +12,12 @@ export type Summary = {
   unconvertedByDate: Record<string, Record<string, number>>;
 };
 
+/** 그 비용의 환율 (1 통화 = ? 기준 통화). 적을 때 저장한 환율이 먼저, 없으면 여행 환율. */
+export function rateOf(e: Pick<Expense, 'currency' | 'rate'>, trip: Pick<Trip, 'baseCurrency' | 'rates'>): number | undefined {
+  if (e.currency === trip.baseCurrency) return 1;
+  return e.rate || trip.rates[e.currency] || undefined;
+}
+
 export function summarizeExpenses(expenses: Expense[], trip: Trip): Summary {
   const s: Summary = {
     total: 0,
@@ -23,7 +29,7 @@ export function summarizeExpenses(expenses: Expense[], trip: Trip): Summary {
     unconvertedByDate: {},
   };
   for (const e of expenses) {
-    const rate = e.currency === trip.baseCurrency ? 1 : trip.rates[e.currency];
+    const rate = rateOf(e, trip);
     if (!rate) {
       s.unconverted[e.currency] = (s.unconverted[e.currency] ?? 0) + e.amount;
       const byDate = (s.unconvertedByDate[e.date] ??= {});
@@ -78,7 +84,7 @@ export function settle(expenses: Expense[], trip: Trip): Settlement {
   const by = new Map(people.map((p) => [p.id, { ...p, paid: 0, share: 0, balance: 0 }]));
   const unconverted: Record<string, number> = {};
   for (const e of expenses) {
-    const rate = e.currency === trip.baseCurrency ? 1 : trip.rates[e.currency];
+    const rate = rateOf(e, trip);
     if (!rate) {
       unconverted[e.currency] = (unconverted[e.currency] ?? 0) + e.amount;
       continue;

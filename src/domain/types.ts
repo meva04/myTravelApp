@@ -13,6 +13,8 @@ export type Trip = {
   baseCurrency: string;
   /** rates[cur] = 1 cur 가 기준 통화로 얼마인지 */
   rates: Record<string, number>;
+  /** 현지 통화 (여행지에서 정한다). 여행 중 비용의 기본 통화. */
+  localCurrency?: string | null;
   /** 같이 가는 사람 (나 말고). 비용을 나눠 계산할 때 쓴다. */
   members?: Member[];
 };
@@ -113,6 +115,8 @@ export type Expense = {
   paidBy?: Id | null;
   /** 나눌 사람들 (없으면 지금 여행의 모든 사람) */
   splitWith?: Id[] | null;
+  /** 적을 때의 환율: 1 currency = rate 기준 통화. 없으면 여행에 저장한 환율을 쓴다. */
+  rate?: number | null;
 };
 
 /** 그날 일정의 한 칸: 장소 또는 이동 메모 */

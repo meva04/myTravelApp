@@ -6,6 +6,7 @@ import { makeRepo, type Repo } from '@/db/repo';
 import { makePlaces, type Places } from '@/google/places';
 import { makeRoutes, type Routes } from '@/google/routes';
 import { makeFlights, type Flights } from '@/travel/flights';
+import { makeFx, type Fx } from '@/travel/fx';
 
 export type Services = {
   repo: Repo;
@@ -13,6 +14,8 @@ export type Services = {
   routes: Routes;
   /** 인천공항 당일 운항 정보 (공공데이터포털 키가 없으면 available=false) */
   flights: Flights;
+  /** 오늘 환율 (무료, 키 없음) */
+  fx: Fx;
   newId: () => string;
   /** 일정이나 도착 상태가 바뀌었을 때 (도착 감지 대상을 다시 등록) */
   onItineraryChanged: () => void;
@@ -30,6 +33,7 @@ export function getServices(): Promise<Services> {
       places: makePlaces(fetch, key),
       routes: makeRoutes(fetch, key, randomUUID),
       flights: makeFlights(fetch, process.env.EXPO_PUBLIC_DATA_GO_KR_KEY ?? ''),
+      fx: makeFx(fetch),
       newId: randomUUID,
       onItineraryChanged: () => {},
     };

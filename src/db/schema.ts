@@ -54,4 +54,6 @@ export const ADDED_COLUMNS: [string, string, string][] = [
   ['trip', 'members', "TEXT NOT NULL DEFAULT '[]'"],
   ['expense', 'paidBy', 'TEXT'],
   ['expense', 'splitWith', 'TEXT'],
+  ['trip', 'localCurrency', 'TEXT'],
+  ['expense', 'rate', 'REAL'],
 ];

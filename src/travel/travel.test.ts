@@ -67,3 +67,15 @@ test('seats: the aircraft type picks the cabin layout, and a seat is window, ais
   expect(aircraftLayout('Airbus A321neo').name).toBe('협동체 (3-3)');
   expect(aircraftLayout('Boeing 777-300ER').blocks[1]).toHaveLength(4);
 });
+
+test('today’s exchange rates are turned into "1 currency = ? base" and cached', async () => {
+  const { makeFx } = jest.requireActual('./fx') as typeof import('./fx');
+  const fetchFn = jest.fn(async () => ({ ok: true, json: async () => ({ result: 'success', time_last_update_unix: 1803945600, rates: { KRW: 1, USD: 0.0008, JPY: 0.1 } }) }));
+  const fx = makeFx(fetchFn as unknown as typeof fetch);
+  const r = await fx.latest('KRW');
+  expect(r.rates.USD).toBeCloseTo(1250);
+  expect(r.rates.JPY).toBeCloseTo(10);
+  expect(r.rates.KRW).toBeUndefined();
+  await fx.latest('KRW');
+  expect(fetchFn).toHaveBeenCalledTimes(1);
+});

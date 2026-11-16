@@ -50,7 +50,8 @@ export const Row = ({ children, style }: { children: ReactNode; style?: StylePro
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper },
-  screenContent: { padding: space.lg, gap: space.md },
+  // 펼친 폴더블처럼 넓은 화면에서도 읽기 좋은 폭을 넘지 않게 가운데 둔다
+  screenContent: { padding: space.lg, gap: space.md, width: '100%', maxWidth: 640, alignSelf: 'center' },
   title: { fontSize: fonts.size.xl, color: colors.ink, fontWeight: '700' },
   heading: { fontSize: fonts.size.lg, color: colors.ink, fontWeight: '600' },
   body: { fontSize: fonts.size.md, color: colors.ink },

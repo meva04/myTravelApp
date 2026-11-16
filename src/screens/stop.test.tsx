@@ -48,6 +48,7 @@ test('an added expense appears in the list and the subtotal in base currency', a
   const { sv, trip, ui } = await setup();
   await render(ui);
   await fireEvent.changeText(await screen.findByPlaceholderText('금액'), '1000');
+  await fireEvent.press(screen.getByText('다른 통화')); // 원화·현지·달러 말고
   await fireEvent.changeText(screen.getByPlaceholderText('통화'), 'jpy');
   await fireEvent.changeText(screen.getByPlaceholderText('내용'), '라멘');
   await fireEvent.press(screen.getByText('비용 추가'));

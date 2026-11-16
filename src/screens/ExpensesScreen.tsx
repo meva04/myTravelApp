@@ -1,21 +1,42 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 
 import { peopleOf, settle, splitOf, summarizeExpenses } from '@/domain/expenses';
 import { CATEGORIES, ME, type Expense } from '@/domain/types';
 import { t } from '@/i18n/ko';
 import { useLoad, useServices } from '@/state/ServicesContext';
+import { currencyChoices, defaultCurrencyOf } from '@/domain/currency';
+import { addExpense, ensureLocalCurrency, refreshRates } from '@/state/expenseOps';
 import { ExpenseForm } from '@/ui/ExpenseForm';
+import { LocalCurrencyField, moneyIn, RateLine, ShowInChips } from '@/ui/Money';
 import { formatMoney, isDate } from '@/ui/format';
 import { Button, Card, Chip, Field, Row, Screen, Txt } from '@/ui/kit';
 import { DateField } from '@/ui/PickerField';
 
 export function ExpensesScreen({ tripId, onEditRates, refreshKey = 0, today }: { tripId: string; onEditRates: () => void; refreshKey?: number; today?: string }) {
-  const { repo, newId } = useServices();
+  const sv = useServices();
+  const { repo, newId } = sv;
   const { data, reload } = useLoad(async () => {
     const trip = await repo.getTrip(tripId);
     return trip ? { trip, expenses: await repo.listExpenses(tripId) } : null;
   }, [tripId, refreshKey]);
+  // 볼 통화 (원화 / 현지 / 달러)
+  const [showIn, setShowIn] = useState<string>();
+  // 처음 열 때: 현지 통화가 없으면 도시 이름으로 정하고, 현지 통화·달러의 오늘 환율을 받아 둔다
+  const loadedTrip = data?.trip;
+  useEffect(() => {
+    if (!loadedTrip) return;
+    let alive = true;
+    (async () => {
+      const withLocal = await ensureLocalCurrency(sv, loadedTrip);
+      const fresh = await refreshRates(sv, withLocal, currencyChoices(withLocal));
+      if (alive && fresh !== loadedTrip) reload();
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadedTrip?.id, loadedTrip?.localCurrency]);
   const [date, setDate] = useState<string>();
   const [badDate, setBadDate] = useState(false);
   const [name, setName] = useState('');
@@ -24,6 +45,10 @@ export function ExpensesScreen({ tripId, onEditRates, refreshKey = 0, today }: {
   const { trip, expenses } = data;
   const s = summarizeExpenses(expenses, trip);
   const base = trip.baseCurrency;
+  const choices = currencyChoices(trip);
+  const view = showIn && choices.includes(showIn) ? showIn : base;
+  // 합계는 고른 통화로 보여 준다 (각 비용은 적은 날 환율로 원화가 된 뒤, 오늘 환율로 바꾼다)
+  const money = (v: number) => moneyIn(v, view, trip);
   const unconverted = Object.entries(s.unconverted);
   // 여행 중이면 오늘, 아니면 첫날을 기본값으로 둔다.
   const defaultDate = today && today >= trip.startDate && today <= trip.endDate ? today : trip.startDate;
@@ -66,8 +91,23 @@ export function ExpensesScreen({ tripId, onEditRates, refreshKey = 0, today }: {
     <Screen>
       <Card>
         <Txt kind="soft">{t('expense.total')}</Txt>
-        <Txt kind="title">{formatMoney(s.total, base)}</Txt>
+        <Txt kind="title">{money(s.total)}</Txt>
+        {view !== base && <Txt kind="soft">{formatMoney(s.total, base)}</Txt>}
+        <ShowInChips choices={choices} value={view} onChange={setShowIn} />
+        <RateLine cur={view} trip={trip} />
         {expenses.length === 0 && <Txt kind="soft">{t('expense.none')}</Txt>}
+      </Card>
+
+      <Card>
+        <Txt kind="heading">{t('currency.title')}</Txt>
+        <Txt kind="small">{t('currency.hint')}</Txt>
+        <LocalCurrencyField
+          value={trip.localCurrency}
+          onChange={async (cur) => {
+            await repo.updateTrip({ ...trip, localCurrency: cur });
+            reload();
+          }}
+        />
       </Card>
 
       <Card>
@@ -126,7 +166,7 @@ export function ExpensesScreen({ tripId, onEditRates, refreshKey = 0, today }: {
               <Txt kind="heading" style={{ flex: 1 }}>
                 {d}
               </Txt>
-              <Txt>{formatMoney(s.byDate[d] ?? 0, base)}</Txt>
+              <Txt>{money(s.byDate[d] ?? 0)}</Txt>
             </Row>
             {expenses
               .filter((e) => e.date === d)
@@ -148,7 +188,7 @@ export function ExpensesScreen({ tripId, onEditRates, refreshKey = 0, today }: {
         {CATEGORIES.filter((c) => s.byCategory[c] > 0).map((c) => (
           <Row key={c}>
             <Txt style={{ flex: 1 }}>{t(`cat.${c}`)}</Txt>
-            <Txt>{formatMoney(s.byCategory[c], base)}</Txt>
+            <Txt>{money(s.byCategory[c])}</Txt>
           </Row>
         ))}
       </Card>
@@ -158,13 +198,15 @@ export function ExpensesScreen({ tripId, onEditRates, refreshKey = 0, today }: {
         <DateField label={t('expense.date')} value={looseDate} onChange={setDate} min={trip.startDate} max={trip.endDate} />
         {badDate && <Txt kind="soft">{t('expense.badDate')}</Txt>}
         <ExpenseForm
-          defaultCurrency={base}
+          key={trip.localCurrency ?? ''}
+          defaultCurrency={defaultCurrencyOf(trip, today)}
+          currencies={choices}
           people={people}
           onAdd={async (e) => {
             const ok = isDate(looseDate) && looseDate >= trip.startDate && looseDate <= trip.endDate;
             setBadDate(!ok);
             if (!ok) return false;
-            await repo.addExpense({ ...e, tripId, date: looseDate, stopId: null });
+            await addExpense(sv, trip, { ...e, date: looseDate, stopId: null });
             reload();
           }}
         />

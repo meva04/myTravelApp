@@ -1,6 +1,7 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 
+import { addExpense } from '@/state/expenseOps';
 import { pickDate } from '@/testing/pickers';
 import { makeTestServices, withServices } from '@/testing/services';
 
@@ -129,4 +130,44 @@ test('people can be added; each expense records who paid and who splits it, and 
   await fireEvent.press(screen.getByLabelText('지영 삭제'));
   expect(alert).toHaveBeenCalledWith('지영', expect.stringContaining('뺄 수 없어요'));
   alert.mockRestore();
+});
+
+test('the city sets the local currency; expenses can be entered in KRW, local or USD and the total shown in any of them', async () => {
+  const fx = { latest: jest.fn(async () => ({ date: '2027-03-01', rates: { JPY: 9, USD: 1400 } })) };
+  const sv = await makeTestServices({ fx });
+  const trip = await sv.repo.createTrip({ name: 't', city: '도쿄', startDate: '2027-03-01', endDate: '2027-03-02', baseCurrency: 'KRW' });
+  await render(withServices(sv, <ExpensesScreen tripId={trip.id} onEditRates={noop} today="2027-03-01" />));
+  expect(await screen.findByText('현지 통화: JPY')).toBeTruthy();
+  // 여행 중에는 현지 통화가 기본
+  await fireEvent.changeText(screen.getByPlaceholderText('금액'), '1000');
+  await fireEvent.press(screen.getByText('비용 추가'));
+  await waitFor(async () => expect(await sv.repo.listExpenses(trip.id)).toMatchObject([{ amount: 1000, currency: 'JPY', rate: 9 }]));
+  // 달러로도 적는다
+  await fireEvent.press(screen.getByLabelText('통화 USD'));
+  await fireEvent.changeText(screen.getByPlaceholderText('금액'), '10');
+  await fireEvent.press(screen.getByText('비용 추가'));
+  await waitFor(async () => expect((await sv.repo.listExpenses(trip.id))[1]).toMatchObject({ amount: 10, currency: 'USD', rate: 1400 }));
+  // 합계: 원화 23,000 → 달러로 보기
+  expect(await screen.findAllByText('23,000 KRW')).not.toHaveLength(0);
+  await fireEvent.press(screen.getByLabelText('보기 USD'));
+  expect(await screen.findAllByText('16.43 USD')).not.toHaveLength(0);
+  expect(screen.getByText('오늘 환율 1 USD = 1,400 KRW')).toBeTruthy();
+});
+
+test('an expense keeps the rate of the day it was entered, even if the rate changes later', async () => {
+  const sv = await makeTestServices({ fx: { latest: async () => ({ date: '2027-03-01', rates: { JPY: 9 } }) } });
+  const trip = await sv.repo.createTrip({ name: 't', city: '오사카', startDate: '2027-03-01', endDate: '2027-03-02', baseCurrency: 'KRW' });
+  await addExpense(sv, trip, { date: '2027-03-01', stopId: null, amount: 1000, currency: 'JPY', category: 'food', memo: '' });
+  const later = (await sv.repo.getTrip(trip.id))!;
+  await sv.repo.updateTrip({ ...later, rates: { JPY: 10 } });
+  await render(withServices(sv, <ExpensesScreen tripId={trip.id} onEditRates={noop} />));
+  expect(await screen.findAllByText('9,000 KRW')).not.toHaveLength(0);
+});
+
+test('a country or city name, typed in, picks the local currency', async () => {
+  const { sv, trip } = await setup();
+  await render(withServices(sv, <ExpensesScreen tripId={trip.id} onEditRates={noop} />));
+  await fireEvent.changeText(await screen.findByPlaceholderText('나라·도시 이름 (예: 도쿄, 영국)'), '베트남 다낭');
+  await fireEvent.press(screen.getByText('VND로 정하기'));
+  await waitFor(async () => expect((await sv.repo.getTrip(trip.id))?.localCurrency).toBe('VND'));
 });

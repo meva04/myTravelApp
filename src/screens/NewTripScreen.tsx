@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { View } from 'react-native';
 
+import { currencyOfPlace } from '@/domain/currency';
 import type { Booking } from '@/domain/types';
 import { t } from '@/i18n/ko';
 import { applyBooking } from '@/state/itineraryOps';
@@ -9,6 +10,7 @@ import { space } from '@/theme/tokens';
 import { blankBooking, BookingSheet, bookingSummary } from '@/ui/BookingSheet';
 import { isDate } from '@/ui/format';
 import { Button, Card, Chip, Field, Row, Screen, Txt } from '@/ui/kit';
+import { LocalCurrencyField } from '@/ui/Money';
 import { DateField } from '@/ui/PickerField';
 
 const MAX_DAYS = 90;
@@ -27,6 +29,10 @@ export function NewTripScreen({ onDone }: { onDone: (tripId: string) => void }) 
   const [endDate, setEnd] = useState('');
   const [baseCurrency, setCur] = useState('KRW');
   const [invalid, setInvalid] = useState(false);
+  // 현지 통화: 직접 고르지 않으면 첫 도시 이름으로 정한다
+  const [pickedLocal, setLocal] = useState<string>();
+  const firstCity = cities[0] ?? cityDraft;
+  const localCurrency = pickedLocal ?? (firstCity.trim() ? currencyOfPlace(firstCity) : null);
   // 예약은 여행을 만든 뒤 일정에 넣는다. 아직 예약 전이면 비워 두고 나중에 예약 화면에서 더한다.
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [editing, setEditing] = useState<Booking | null>(null);
@@ -44,7 +50,7 @@ export function NewTripScreen({ onDone }: { onDone: (tripId: string) => void }) 
     if (!ok) return;
     const all = cityDraft.trim() && !cities.includes(cityDraft.trim()) ? [...cities, cityDraft.trim()] : cities;
     const trip = await repo.createTrip({
-      name: name.trim(), city: joinCities(all), startDate, endDate, baseCurrency: baseCurrency.trim().toUpperCase(),
+      name: name.trim(), city: joinCities(all), startDate, endDate, baseCurrency: baseCurrency.trim().toUpperCase(), localCurrency,
     });
     for (const b of bookings) await applyBooking(sv, { ...b, tripId: trip.id });
     onDone(trip.id);
@@ -76,6 +82,7 @@ export function NewTripScreen({ onDone }: { onDone: (tripId: string) => void }) 
       />
       <DateField label={t('trip.endDate')} value={endDate} onChange={setEnd} min={startDate || undefined} />
       <Field placeholder={t('trip.baseCurrency')} value={baseCurrency} onChangeText={setCur} autoCapitalize="characters" />
+      <LocalCurrencyField value={localCurrency} onChange={setLocal} />
 
       <Card>
         <Txt kind="heading">{t('trip.bookings')}</Txt>

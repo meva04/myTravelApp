@@ -47,10 +47,11 @@ type Props = {
 };
 
 const MODES: TravelMode[] = ['walk', 'transit', 'drive'];
-/** 일정 시트 높이 (화면 비율). 손잡이를 끌어 올리고 내려 크기를 바꾼다. */
-const SNAPS = [0.28, 0.58, 0.92];
-/** 이보다 높이 올리면 지도 대신 일정을 보는 것이라 지도 여백은 그대로 둔다 */
-const MAX_INSET = 0.6;
+/** 내린 시트에서 보이는 손잡이 높이. 시트는 손잡이만 / 절반 / 꽉 찬 화면 세 자리에 멈춘다. */
+const HANDLE = 28;
+const MIDDLE = 0.5;
+/** 이 너비부터 일정 판과 지도를 나란히 둔다 (펼친 아이폰 듀오는 669pt) */
+const WIDE = 600;
 
 type Item = { kind: 'stop'; id: string; stop: Stop; index: number } | { kind: 'note'; id: string; note: Note };
 
@@ -249,7 +250,11 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
   const spent = summary && day ? (summary.byDate[day.date] ?? 0) : 0;
   const unconverted = summary && day ? formatAmounts(summary.unconvertedByDate[day.date]) : '';
   const meters = legs.reduce((sum, l) => sum + (selectedOption(l)?.distanceMeters ?? 0), 0);
-  const inset = Math.round(height * Math.min(SNAPS[sheetIndex] ?? SNAPS[1], MAX_INSET));
+  // 화면이 넓으면 (펼친 아이폰 듀오 669pt, 가로 화면) 일정과 지도를 나란히 둔다
+  const wide = screen.width >= WIDE;
+  const panelWidth = Math.min(420, Math.max(340, Math.round(screen.width * 0.5)));
+  // 지도 여백: 내리면 손잡이만큼, 절반이면 절반. 꽉 채우면 지도가 안 보이니 절반 그대로 둔다.
+  const inset = sheetIndex === 0 ? HANDLE : Math.round(height * MIDDLE);
   const past = !!day && !!today && day.date < today;
   const view = (day && viewOf[day.id]) ?? (past ? 'diary' : 'plan');
   const photosOf = (stopId: string) => photos.filter((p) => p.stopId === stopId && !p.noteId);
@@ -344,130 +349,153 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
     r.kind === 'stop' ? { kind: 'stop', stop: r.stop, photos: photosOf(r.stop.id) } : { kind: 'note', note: r.note, photos: photos.filter((p) => p.noteId === r.note.id) },
   );
 
-  return (
-    <View style={styles.fill} onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>
-      <View style={StyleSheet.absoluteFill}>
-        {loaded && (
-          <DayMap
-            // 날을 바꾸거나 첫 방문지가 생기면 새로 그려 전체가 보이게 맞춘다.
-            key={`${dayId}:${points.length > 0}`}
-            ref={map}
-            initialPoints={points}
-            stops={stops}
-            legs={legs}
-            selection={selection}
-            onSelect={(s) => s && select(s)}
-            onRegion={() => {}}
-            bottomInset={inset}
+  const mapView = (
+    <>
+      {loaded && (
+        <DayMap
+          // 날을 바꾸거나 첫 방문지가 생기면 새로 그려 전체가 보이게 맞춘다.
+          key={`${dayId}:${points.length > 0}`}
+          ref={map}
+          initialPoints={points}
+          stops={stops}
+          legs={legs}
+          selection={selection}
+          onSelect={(s) => s && select(s)}
+          onRegion={() => {}}
+          bottomInset={wide ? 0 : inset}
+        />
+      )}
+      {points.length > 0 && (
+        <View style={styles.mapButtons}>
+          <MapButton label={t('map.fitAll')} onPress={() => map.current?.send({ type: 'fitAll', points })} />
+        </View>
+      )}
+    </>
+  );
+  const panel = (
+    <>
+      <View style={styles.tabs}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }} style={{ flex: 1 }}>
+          {days.map((d, i) => (
+            <Chip key={d.id} label={t('day.label', { n: i + 1 })} selected={d.id === dayId} onPress={() => changeDay(d.id)} />
+          ))}
+        </ScrollView>
+        {day && (
+          <Chip
+            label={view === 'diary' ? t('day.planView') : t('day.diaryView')}
+            onPress={() => setViewOf({ ...viewOf, [day.id]: view === 'diary' ? 'plan' : 'diary' })}
           />
         )}
-        {points.length > 0 && (
-          <View style={styles.mapButtons}>
-            <MapButton label={t('map.fitAll')} onPress={() => map.current?.send({ type: 'fitAll', points })} />
-          </View>
-        )}
+        {view === 'plan' && rows.length > 0 && <Chip label={editing ? t('day.editDone') : t('day.edit')} selected={editing} onPress={() => setEditing(!editing)} />}
       </View>
 
-      <BottomSheet
-        snapPoints={SNAPS.map((f) => Math.round(height * f))}
-        index={1}
-        onChange={(i) => i >= 0 && setSheetIndex(i)}
-        enableDynamicSizing={false}
-        // 옆으로 미는 동작(카드 밀어서 삭제)은 시트가 가져가지 않게 한다
-        activeOffsetY={[-12, 12]}
-        failOffsetX={[-8, 8]}
-        backgroundStyle={styles.sheetBg}
-        handleIndicatorStyle={{ backgroundColor: colors.line, width: 44 }}
-      >
-        <BottomSheetScrollView contentContainerStyle={styles.sheet}>
-          <View style={styles.tabs}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }} style={{ flex: 1 }}>
-              {days.map((d, i) => (
-                <Chip key={d.id} label={t('day.label', { n: i + 1 })} selected={d.id === dayId} onPress={() => changeDay(d.id)} />
-              ))}
-            </ScrollView>
-            {day && (
-              <Chip
-                label={view === 'diary' ? t('day.planView') : t('day.diaryView')}
-                onPress={() => setViewOf({ ...viewOf, [day.id]: view === 'diary' ? 'plan' : 'diary' })}
-              />
-            )}
-            {view === 'plan' && rows.length > 0 && <Chip label={editing ? t('day.editDone') : t('day.edit')} selected={editing} onPress={() => setEditing(!editing)} />}
+      {day && view === 'diary' && (
+        <DiaryDay
+          date={day.date}
+          dayNumber={days.indexOf(day) + 1}
+          entries={diaryEntries}
+          missed={stops.filter((s) => !s.arrivedAt && !s.bookingId && s.memo === '' && photosOf(s.id).length === 0)}
+          summary={`${t('diary.summary', { n: stops.filter((s) => s.arrivedAt).length, km: formatKm(meters), photos: photos.length })}`}
+          resolvePhoto={resolvePhoto}
+          onOpenStop={onOpenStop}
+          onOpenNote={onOpenNote}
+          trip={trip}
+          expenses={(expenses ?? []).filter((e) => e.date === day.date)}
+        />
+      )}
+
+      {day && view === 'plan' && (
+        <>
+          <Txt kind="soft">{`${day.date} · ${dayLine}`}</Txt>
+          {unconverted !== '' && <Txt kind="soft">{`${t('expense.unconverted')}: ${unconverted}`}</Txt>}
+
+          {loaded && rows.length === 0 && (
+            <Card>
+              <Txt kind="soft">{t('day.empty')}</Txt>
+            </Card>
+          )}
+
+          {/* 길게 눌러 끌면 장소와 이동 메모의 순서를 함께 바꾼다. 왼쪽으로 밀면 삭제. */}
+          <Sortable.Grid
+            columns={1}
+            rowGap={editing ? space.sm : 0}
+            data={rows}
+            keyExtractor={(r) => r.id}
+            dragActivationDelay={350}
+            activeItemScale={1.03}
+            onDragEnd={({ data }) => void onDragEnd(data)}
+            renderItem={({ item }) => renderRow(item)}
+          />
+          {rows.length > 1 && <Txt kind="small">{t('day.dragHint')}</Txt>}
+
+          {!editing && hidden.length > 0 && (
+            <View style={{ gap: space.sm }}>
+              <Pressable accessibilityRole="button" onPress={() => setShowHidden(!showHidden)}>
+                <Text style={styles.legText}>{`${t('day.hidden', { n: hidden.length })} ${showHidden ? '▴' : '▾'}`}</Text>
+              </Pressable>
+              {showHidden &&
+                hidden.map((s) => (
+                  <Card key={s.id} style={styles.hiddenCard} onPress={() => onOpenStop(s.id)}>
+                    <Row>
+                      <Txt style={{ flex: 1, color: colors.inkSoft }}>{s.name}</Txt>
+                      <Chip
+                        label={t('stop.unhide')}
+                        onPress={async () => {
+                          await setSkipped(sv, s, false);
+                          changed();
+                        }}
+                      />
+                    </Row>
+                  </Card>
+                ))}
+            </View>
+          )}
+
+          {moving && (
+            <Card>
+              <Txt>{t('day.moveToTitle')}</Txt>
+              <Row style={{ flexWrap: 'wrap' }}>
+                {days.map((d, i) => d.id !== day.id && <Chip key={d.id} label={t('day.label', { n: i + 1 })} onPress={() => void moveTo(d)} />)}
+                <Chip label={t('common.cancel')} onPress={() => setMoving(null)} />
+              </Row>
+            </Card>
+          )}
+        </>
+      )}
+    </>
+  );
+
+  return (
+    <View style={styles.fill} onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>
+      {wide ? (
+        // 펼친 폴더블(아이폰 듀오)·큰 화면: 일정은 왼쪽 판, 지도는 오른쪽에 나란히
+        <View style={styles.split} testID="split-layout">
+          <View style={[styles.panel, { width: panelWidth }]}>
+            <ScrollView contentContainerStyle={styles.sheet}>{panel}</ScrollView>
           </View>
-
-          {day && view === 'diary' && (
-            <DiaryDay
-              date={day.date}
-              dayNumber={days.indexOf(day) + 1}
-              entries={diaryEntries}
-              missed={stops.filter((s) => !s.arrivedAt && !s.bookingId && s.memo === '' && photosOf(s.id).length === 0)}
-              summary={`${t('diary.summary', { n: stops.filter((s) => s.arrivedAt).length, km: formatKm(meters), photos: photos.length })}`}
-              resolvePhoto={resolvePhoto}
-              onOpenStop={onOpenStop}
-              onOpenNote={onOpenNote}
-            />
-          )}
-
-          {day && view === 'plan' && (
-            <>
-              <Txt kind="soft">{`${day.date} · ${dayLine}`}</Txt>
-              {unconverted !== '' && <Txt kind="soft">{`${t('expense.unconverted')}: ${unconverted}`}</Txt>}
-
-              {loaded && rows.length === 0 && (
-                <Card>
-                  <Txt kind="soft">{t('day.empty')}</Txt>
-                </Card>
-              )}
-
-              {/* 길게 눌러 끌면 장소와 이동 메모의 순서를 함께 바꾼다. 왼쪽으로 밀면 삭제. */}
-              <Sortable.Grid
-                columns={1}
-                rowGap={editing ? space.sm : 0}
-                data={rows}
-                keyExtractor={(r) => r.id}
-                dragActivationDelay={350}
-                activeItemScale={1.03}
-                onDragEnd={({ data }) => void onDragEnd(data)}
-                renderItem={({ item }) => renderRow(item)}
-              />
-              {rows.length > 1 && <Txt kind="small">{t('day.dragHint')}</Txt>}
-
-              {!editing && hidden.length > 0 && (
-                <View style={{ gap: space.sm }}>
-                  <Pressable accessibilityRole="button" onPress={() => setShowHidden(!showHidden)}>
-                    <Text style={styles.legText}>{`${t('day.hidden', { n: hidden.length })} ${showHidden ? '▴' : '▾'}`}</Text>
-                  </Pressable>
-                  {showHidden &&
-                    hidden.map((s) => (
-                      <Card key={s.id} style={styles.hiddenCard} onPress={() => onOpenStop(s.id)}>
-                        <Row>
-                          <Txt style={{ flex: 1, color: colors.inkSoft }}>{s.name}</Txt>
-                          <Chip
-                            label={t('stop.unhide')}
-                            onPress={async () => {
-                              await setSkipped(sv, s, false);
-                              changed();
-                            }}
-                          />
-                        </Row>
-                      </Card>
-                    ))}
-                </View>
-              )}
-
-              {moving && (
-                <Card>
-                  <Txt>{t('day.moveToTitle')}</Txt>
-                  <Row style={{ flexWrap: 'wrap' }}>
-                    {days.map((d, i) => d.id !== day.id && <Chip key={d.id} label={t('day.label', { n: i + 1 })} onPress={() => void moveTo(d)} />)}
-                    <Chip label={t('common.cancel')} onPress={() => setMoving(null)} />
-                  </Row>
-                </Card>
-              )}
-            </>
-          )}
-        </BottomSheetScrollView>
-      </BottomSheet>
+          <View style={{ flex: 1 }}>{mapView}</View>
+        </View>
+      ) : (
+        <>
+          <View style={StyleSheet.absoluteFill}>{mapView}</View>
+          <BottomSheet
+            snapPoints={[HANDLE, Math.round(height * MIDDLE), Math.round(height)]}
+            index={1}
+            onChange={(i) => i >= 0 && setSheetIndex(i)}
+            enableDynamicSizing={false}
+            // 시트 크기는 손잡이로만 바꾸고, 안쪽은 어느 높이에서나 일정을 스크롤한다
+            enableContentPanningGesture={false}
+            handleStyle={styles.handle}
+            // 옆으로 미는 동작(카드 밀어서 삭제)은 시트가 가져가지 않게 한다
+            activeOffsetY={[-12, 12]}
+            failOffsetX={[-8, 8]}
+            backgroundStyle={styles.sheetBg}
+            handleIndicatorStyle={{ backgroundColor: colors.line, width: 44 }}
+          >
+            <BottomSheetScrollView contentContainerStyle={styles.sheet}>{panel}</BottomSheetScrollView>
+          </BottomSheet>
+        </>
+      )}
 
       {noteFor && (
         <SheetModal
@@ -658,9 +686,12 @@ const DOT = 30;
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.paper },
+  split: { flex: 1, flexDirection: 'row' },
+  panel: { backgroundColor: colors.paper, borderRightWidth: StyleSheet.hairlineWidth, borderColor: colors.line },
   mapButtons: { position: 'absolute', right: space.md, top: space.md, flexDirection: 'row', gap: space.sm },
   mapButton: { paddingVertical: space.xs + 2, paddingHorizontal: space.md, borderRadius: radius.pill, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
   mapButtonText: { fontSize: fonts.size.xs, fontWeight: '600', color: colors.ink },
+  handle: { height: HANDLE, paddingVertical: 0, justifyContent: 'center' },
   sheetBg: { backgroundColor: colors.paper, borderTopLeftRadius: radius.lg + 4, borderTopRightRadius: radius.lg + 4 },
   sheet: { paddingHorizontal: space.lg, paddingTop: space.xs, paddingBottom: 120, gap: space.md },
   tabs: { flexDirection: 'row', alignItems: 'center', gap: space.sm },

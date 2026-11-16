@@ -5,6 +5,7 @@ import { t } from '@/i18n/ko';
 import type { LocationAccess } from '@/location/geofenceCore';
 import { useLoad, useServices } from '@/state/ServicesContext';
 import { Button, Card, Field, Row, Screen, Txt } from '@/ui/kit';
+import { LocalCurrencyField } from '@/ui/Money';
 
 type Props = {
   tripId: string;
@@ -94,6 +95,13 @@ export function SettingsScreen({ tripId, getAccess, requestAlways, openSystemSet
       <Card>
         <Txt kind="heading">{t('settings.baseCurrency')}</Txt>
         <Field value={base ?? trip.baseCurrency} onChangeText={setBase} autoCapitalize="characters" />
+        <LocalCurrencyField
+          value={trip.localCurrency}
+          onChange={async (cur) => {
+            await repo.updateTrip({ ...trip, localCurrency: cur });
+            reload();
+          }}
+        />
         <Txt kind="heading">{t('settings.rates')}</Txt>
         {Object.keys(trip.rates).map((cur) => (
           <Row key={cur}>
