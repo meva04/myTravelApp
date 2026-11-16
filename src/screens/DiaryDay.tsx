@@ -1,6 +1,6 @@
 // 일기 모드: 지나간 날을 장소별 사진과 기록 중심으로 보여 준다.
 import { Image } from 'expo-image';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { currencyChoices } from '@/domain/currency';
@@ -63,15 +63,28 @@ export function DiaryDay({ date, dayNumber, entries, missed, summary, resolvePho
           <View key={e.stop.id}>
             {/* 장소 블럭과 블럭은 가운데 세로줄로 잇는다 */}
             {i > 0 && <View style={styles.thread} />}
-            <Pressable accessibilityRole="button" onPress={() => onOpenStop(e.stop.id)} style={styles.entry}>
-              <Mosaic photos={list} resolvePhoto={resolvePhoto} onOpen={(k) => setViewing({ uris: list.map((p) => resolvePhoto(p.uri)), start: k })} />
-              <View style={styles.titleRow}>
-                <KindIcon kind={e.stop.kind} size={14} color={colors.inkSoft} />
-                <Text style={styles.place}>{e.stop.name}</Text>
+            {/* 장소명·사진·글을 카드 하나로 묶는다 */}
+            <View style={styles.card} testID={`diary-card:${e.stop.id}`}>
+              {/* 장소와 시간은 가운데, 사진 위. 편집은 장소 상세(기록·사진)로 간다. */}
+              <View style={styles.titleBlock}>
+                <View style={styles.titleRow}>
+                  <KindIcon kind={e.stop.kind} size={14} color={colors.inkSoft} />
+                  <Text style={styles.place}>{e.stop.name}</Text>
+                  <Pressable accessibilityRole="button" accessibilityLabel={t('diary.editLabel', { name: e.stop.name })} onPress={() => onOpenStop(e.stop.id)} hitSlop={8} style={({ pressed }) => [styles.edit, pressed && { opacity: 0.6 }]}>
+                    <Text style={styles.editText}>{t('diary.edit')}</Text>
+                  </Pressable>
+                </View>
                 {time !== '' && <Text style={styles.time}>{time}</Text>}
               </View>
-              {e.stop.memo !== '' && <Text style={styles.memo}>{e.stop.memo}</Text>}
-            </Pressable>
+              <PhotoGrid photos={list}resolvePhoto={resolvePhoto} onOpen={(k) => setViewing({ uris: list.map((p) => resolvePhoto(p.uri)), start: k })} />
+              {e.stop.memo !== '' ? (
+                <Text style={styles.memo}>{e.stop.memo}</Text>
+              ) : (
+                <Pressable accessibilityRole="button" onPress={() => onOpenStop(e.stop.id)} style={({ pressed }) => pressed && { opacity: 0.6 }}>
+                  <Text style={styles.prompt}>{t('diary.writePrompt')}</Text>
+                </Pressable>
+              )}
+            </View>
           </View>
         );
       })}
@@ -123,50 +136,79 @@ function DaySpending({ expenses, trip }: { expenses: Expense[]; trip: Trip }) {
 }
 
 /**
- * 사진 모자이크: 큰 사진 한 장 → 중간·작은 두 장 → 작은 세 장 → 같은 크기 두 장 순서로 줄을 바꿔 가며 섞는다.
- * 줄마다 높이를 비율로 정해 두어 따로 재지 않아도 된다.
+ * 사진 배치 (애플 일기 앱 참고).
+ * - 대표 사진은 언제나 맨 위에 한 칼럼으로.
+ * - 나머지는 최대 다섯 장씩 묶음으로, 장 수에 따라 모양을 달리한다.
+ *   1장: 한 칼럼 / 2장: 좌우 / 3장: 왼쪽 큰 것 + 오른쪽 위아래 / 4장: 왼쪽 큰 것 + 오른쪽 위 하나·아래 둘 / 5장: 오른쪽 위도 둘로
+ * - 대표 + 다섯 장 묶음 둘 = 11칸. 사진은 10장까지만 보이고, 더 있으면 11번째 칸이 "+N" 이 된다.
  */
-const PATTERN: { weights: number[]; ratio: number }[] = [
-  { weights: [1], ratio: 4 / 3 },
-  { weights: [2, 1], ratio: 3 / 2 },
-  { weights: [1, 1, 1], ratio: 3 },
-  { weights: [1, 1], ratio: 2 },
-];
+export type Tile = { index: number; more?: number };
+export type BlockKind = 'cover' | 'one' | 'two' | 'three' | 'four' | 'five';
+export type Block = { kind: BlockKind; tiles: Tile[] };
 
-/** 사진들을 줄로 나눈다 (마지막 줄은 남은 장 수에 맞춘다) */
-export function mosaicRows<T>(items: T[]): { items: T[]; weights: number[]; ratio: number }[] {
-  const rows: { items: T[]; weights: number[]; ratio: number }[] = [];
-  let i = 0;
-  let k = 0;
-  while (i < items.length) {
-    const left = items.length - i;
-    let p = PATTERN[k % PATTERN.length];
-    if (p.weights.length > left) p = left === 1 ? PATTERN[0] : left === 2 ? PATTERN[3] : p;
-    rows.push({ items: items.slice(i, i + p.weights.length), weights: p.weights, ratio: p.ratio });
-    i += p.weights.length;
-    k++;
+const MAX_SHOWN = 10;
+const PER_BLOCK = 5;
+const KIND_BY_COUNT: BlockKind[] = ['one', 'one', 'two', 'three', 'four', 'five'];
+
+export function photoBlocks(count: number): Block[] {
+  if (count <= 0) return [];
+  const blocks: Block[] = [{ kind: 'cover', tiles: [{ index: 0 }] }];
+  const rest: Tile[] = [];
+  for (let i = 1; i < Math.min(count, MAX_SHOWN); i++) rest.push({ index: i });
+  if (count > MAX_SHOWN) rest.push({ index: MAX_SHOWN, more: count - MAX_SHOWN });
+  for (let i = 0; i < rest.length; i += PER_BLOCK) {
+    const tiles = rest.slice(i, i + PER_BLOCK);
+    blocks.push({ kind: KIND_BY_COUNT[tiles.length], tiles });
   }
-  return rows;
+  return blocks;
 }
 
-function Mosaic({ photos, resolvePhoto, onOpen }: { photos: Photo[]; resolvePhoto: (uri: string) => string; onOpen: (index: number) => void }) {
-  if (photos.length === 0) return null;
-  let n = 0;
+function PhotoGrid({ photos, resolvePhoto, onOpen }: { photos: Photo[]; resolvePhoto: (uri: string) => string; onOpen: (index: number) => void }) {
+  const tile = (tl: Tile, style?: object) => {
+    const p = photos[tl.index];
+    return (
+      <Pressable
+        key={p.id}
+        accessibilityRole="imagebutton"
+        accessibilityLabel={tl.more ? t('diary.morePhotos', { n: tl.more }) : t('diary.photoOpen')}
+        onPress={() => onOpen(tl.index)}
+        style={[styles.tile, style]}
+      >
+        <Image source={{ uri: resolvePhoto(thumbOf(p.uri)) }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} recyclingKey={p.id} accessibilityIgnoresInvertColors />
+        {isVideo(p.uri) && !tl.more && <Text style={styles.play}>▶</Text>}
+        {tl.more ? (
+          <View style={styles.more}>
+            <Text style={styles.moreText}>{`+${tl.more}`}</Text>
+          </View>
+        ) : null}
+      </Pressable>
+    );
+  };
+  const col = (children: ReactNode[]) => <View style={styles.col}>{children}</View>;
+  const row = (children: ReactNode[], key = 'r') => (
+    <View key={key} style={styles.row}>
+      {children}
+    </View>
+  );
   return (
     <View style={{ gap: GAP }}>
-      {mosaicRows(photos).map((row, r) => (
-        <View key={r} style={[styles.mRow, { aspectRatio: row.ratio }]}>
-          {row.items.map((p, j) => {
-            const at = n++;
-            return (
-              <Pressable key={p.id} accessibilityRole="imagebutton" accessibilityLabel={t('diary.photoOpen')} onPress={() => onOpen(at)} style={{ flex: row.weights[j] }}>
-                <Image source={{ uri: resolvePhoto(thumbOf(p.uri)) }} style={styles.mImg} contentFit="cover" transition={200} recyclingKey={p.id} accessibilityIgnoresInvertColors />
-                {isVideo(p.uri) && <Text style={styles.play}>▶</Text>}
-              </Pressable>
-            );
-          })}
-        </View>
-      ))}
+      {photoBlocks(photos.length).map((b, i) => {
+        const [a, c, d, e, f] = b.tiles;
+        switch (b.kind) {
+          case 'cover':
+            return <View key={i} style={{ aspectRatio: 4 / 3 }}>{tile(a, { flex: 1 })}</View>;
+          case 'one':
+            return <View key={i} style={{ aspectRatio: 3 / 2 }}>{tile(a, { flex: 1 })}</View>;
+          case 'two':
+            return <View key={i} style={[styles.row, { aspectRatio: 2 }]}>{tile(a)}{tile(c)}</View>;
+          case 'three':
+            return <View key={i} style={[styles.row, { aspectRatio: 2 }]}>{tile(a)}{col([tile(c), tile(d)])}</View>;
+          case 'four':
+            return <View key={i} style={[styles.row, { aspectRatio: 2 }]}>{tile(a)}{col([tile(c), row([tile(d), tile(e)])])}</View>;
+          case 'five':
+            return <View key={i} style={[styles.row, { aspectRatio: 2 }]}>{tile(a)}{col([row([tile(c), tile(d)], 'top'), row([tile(e), tile(f)], 'bottom')])}</View>;
+        }
+      })}
     </View>
   );
 }
@@ -180,15 +222,34 @@ const styles = StyleSheet.create({
   date: { fontFamily: SERIF, fontSize: 24, color: colors.ink },
   summary: { fontSize: fonts.size.xs, color: colors.inkSoft },
   empty: { fontFamily: SERIF, fontSize: fonts.size.md, color: colors.inkSoft, textAlign: 'center', paddingVertical: space.xl },
-  entry: { gap: space.sm },
-  thread: { alignSelf: 'center', width: 1.5, height: 36, backgroundColor: colors.line, marginVertical: space.sm },
-  time: { fontSize: fonts.size.xs, color: colors.inkSoft, fontVariant: ['tabular-nums'], marginLeft: 'auto' },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  place: { fontFamily: SERIF, fontSize: fonts.size.lg, color: colors.ink, flexShrink: 1 },
-  mRow: { flexDirection: 'row', gap: GAP, width: '100%' },
-  mImg: { width: '100%', height: '100%', borderRadius: radius.sm, backgroundColor: colors.accentSoft },
+  card: {
+    gap: space.sm,
+    padding: space.sm,
+    paddingBottom: space.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.line,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  thread: { alignSelf: 'center', width: 1.5, height: 28, backgroundColor: colors.line },
+  row: { flex: 1, flexDirection: 'row', gap: GAP },
+  col: { flex: 1, gap: GAP },
+  tile: { flex: 1, overflow: 'hidden', borderRadius: radius.sm, backgroundColor: colors.accentSoft },
+  more: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
+  moreText: { color: '#fff', fontSize: fonts.size.lg, fontWeight: '700' },
+  titleBlock: { alignItems: 'center', gap: 2 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, maxWidth: '100%' },
+  place: { fontFamily: SERIF, fontSize: fonts.size.lg, color: colors.ink, flexShrink: 1, textAlign: 'center' },
+  time: { fontSize: fonts.size.xs, color: colors.inkSoft, fontVariant: ['tabular-nums'] },
+  edit: { paddingVertical: 2, paddingHorizontal: space.sm, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line },
+  editText: { fontSize: fonts.size.xs, color: colors.inkSoft },
+  prompt: { fontFamily: SERIF, fontSize: fonts.size.md, lineHeight: 26, color: colors.inkSoft, fontStyle: 'italic', textAlign: 'center', paddingVertical: space.xs },
   play: { position: 'absolute', left: 0, right: 0, top: '42%', textAlign: 'center', fontSize: 22, color: '#fff' },
-  memo: { fontFamily: SERIF, fontSize: fonts.size.md, lineHeight: 26, color: colors.ink },
+  memo: { fontFamily: SERIF, fontSize: fonts.size.md, lineHeight: 26, color: colors.ink, paddingHorizontal: space.xs },
   spend: { borderTopWidth: StyleSheet.hairlineWidth, borderColor: colors.line, paddingTop: space.md, gap: space.sm },
   spendButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: space.sm, paddingHorizontal: space.md, borderRadius: radius.md, backgroundColor: colors.accentSoft },
   spendLabel: { fontSize: fonts.size.sm, color: colors.ink, fontWeight: '600' },

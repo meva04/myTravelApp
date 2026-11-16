@@ -5,6 +5,7 @@ import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, useWindowDimen
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import Sortable, { useItemContext } from 'react-native-sortables';
+import { SymbolView, type SFSymbol } from 'expo-symbols';
 
 import { bookingLine } from '@/domain/bookings';
 import { parseChecklist, serializeChecklist, type CheckItem } from '@/domain/checklist';
@@ -74,6 +75,8 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
   // 날마다 고른 보기. 정하지 않았으면 지난 날은 일기, 아니면 계획.
   const [viewOf, setViewOf] = useState<Record<string, 'plan' | 'diary'>>({});
   const map = useRef<DayMapHandle>(null);
+  // 그날 방문지가 지금 지도에 다 보이면 "한눈에 보기" 버튼을 숨긴다
+  const [allVisible, setAllVisible] = useState(false);
   const screen = useWindowDimensions();
   const [height, setHeight] = useState(screen.height * 0.85);
   const [sheetIndex, setSheetIndex] = useState(1);
@@ -214,6 +217,13 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
   const rowHeights = useRef<Record<string, number>>({});
   const stopHeights = useRef<Record<string, number>>({});
   const gridTop = useRef(0);
+  // 칸 높이가 바뀌면 이동 수단 칸(목록 위에 겹쳐 그림)을 다시 맞춘다. 끄는 동안에는 숨긴다.
+  const [measured, setMeasured] = useState<{ row: Record<string, number>; stop: Record<string, number> }>({ row: {}, stop: {} });
+  const [dragging, setDragging] = useState(false);
+  const keepHeight = (which: 'row' | 'stop', id: string, h: number) => {
+    (which === 'row' ? rowHeights : stopHeights).current[id] = h;
+    setMeasured((m) => (Math.abs((m[which][id] ?? -1) - h) < 0.5 ? m : { ...m, [which]: { ...m[which], [id]: h } }));
+  };
   const followed = useRef<string | null>(null);
   const follow = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     if (editing || !day || (viewOf[day.id] ?? (past0 ? 'diary' : 'plan')) !== 'plan') return;
@@ -292,6 +302,29 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
   const dayLine = day ? t('day.summary', { stops: stops.length, km: formatKm(meters), spent: formatMoney(spent, trip.baseCurrency) }) : '';
 
   // 첫 줄과 마지막 줄은 높이를 재어 고정 연결선의 시작·끝을 맞춘다
+  /**
+   * 구간마다 이동 수단 칸을 그릴 자리: 앞 장소 카드 바로 아래부터 다음 장소 칸 바로 위까지.
+   * 칸 높이는 재어 둔 값(measured)으로 셈한다.
+   */
+  const legSpans = (() => {
+    const out: { leg: Leg; top: number; height: number; measured: boolean }[] = [];
+    let y = 0;
+    let open: { leg: Leg; top: number } | null = null;
+    // 아직 높이를 재지 않은 칸이 있으면 자리를 모르니 보이지 않게만 그려 둔다
+    const known = rows.every((r) => measured.row[r.id] !== undefined);
+    for (const r of rows) {
+      const h = measured.row[r.id] ?? 0;
+      if (r.kind === 'stop') {
+        if (open) out.push({ ...open, height: Math.max(y - open.top, LEG_MIN), measured: known });
+        open = null;
+        const leg = legs.find((l) => l.fromStopId === r.id);
+        const stopH = measured.stop[r.id] ?? h;
+        if (leg && rows.slice(rows.indexOf(r) + 1).some((x) => x.kind === 'stop')) open = { leg, top: y + stopH };
+      }
+      y += h;
+    }
+    return out;
+  })();
   const endMeasure = (r: Item) => {
     const i = rows.indexOf(r);
     if (i === 0 && i === rows.length - 1) return undefined;
@@ -352,7 +385,7 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
             stop={s}
             index={r.index}
             onLayoutHeight={(h) => {
-              stopHeights.current[s.id] = h;
+              keepHeight('stop', s.id, h);
               endMeasure(r)?.(h);
             }}
             selected={selection?.type === 'stop' && selection.id === s.id}
@@ -369,16 +402,6 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
               setNoteDraft([]);
               setNoteTyping('');
             }}
-            onDirections={() => {
-              const to = stops.find((x) => x.id === leg.toStopId);
-              if (to) openUrl(directionsUrl(s, to, leg.mode));
-            }}
-            leg={leg}
-            status={status[leg.id]}
-            selected={selection?.type === 'leg' && selection.id === leg.id}
-            onPress={() => select({ type: 'leg', id: leg.id })}
-            onMode={(m) => leg.mode !== m && setMode(leg.id, m)}
-            onRetry={retry}
           />
           </StayPut>
         )}
@@ -403,9 +426,11 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
           onSelect={(s) => s && select(s)}
           onRegion={() => {}}
           bottomInset={wide ? 0 : inset}
+          onAllVisible={setAllVisible}
         />
       )}
-      {points.length > 0 && (
+      {/* 경로가 한 화면에 다 담기면 숨고, 확대·이동해서 벗어나면 다시 나온다 */}
+      {points.length > 0 && !allVisible && (
         <View style={styles.mapButtons}>
           <MapButton label={t('map.fitAll')} onPress={() => map.current?.send({ type: 'fitAll', points })} />
         </View>
@@ -482,11 +507,28 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
             inactiveItemOpacity={1}
             // 끄는 동안 바탕은 비우고 장소 카드와 번호만 떠서 움직인다
             activeItemShadowOpacity={0}
-            onDragEnd={({ data }) => void onDragEnd(data)}
+            onDragStart={() => setDragging(true)}
+            onDragEnd={({ data }) => {
+              setDragging(false);
+              void onDragEnd(data);
+            }}
             renderItem={({ item }) => (
-              <View onLayout={(e) => (rowHeights.current[item.id] = e.nativeEvent.layout.height)}>{renderRow(item)}</View>
+              <View onLayout={(e) => keepHeight('row', item.id, e.nativeEvent.layout.height)}>{renderRow(item)}</View>
             )}
           />
+          {/* 구간의 거리·이동 수단 칸은 목록 위에 겹쳐 그려, 사이에 든 이동 메모 높이만큼 늘어나게 한다 */}
+          {!editing && !dragging && (
+            <LegColumns
+              spans={legSpans}
+              status={status}
+              selectedLeg={selection?.type === 'leg' ? selection.id : null}
+              onSelect={select}
+              onMode={setMode}
+              onRetry={retry}
+              stops={stops}
+              openUrl={openUrl}
+            />
+          )}
           </View>
           {rows.length > 1 && <Txt kind="small">{t('day.dragHint')}</Txt>}
 
@@ -674,7 +716,7 @@ function StopRow({ stop, index, selected, thumb, info, onOpen, onCheck, onDelete
   );
 }
 
-/** 이동 메모 카드. 세로줄 위에 따로 점을 찍지 않고 카드만 둔다. */
+/** 이동 메모 카드. 세로줄 위에 따로 점을 찍지 않고 카드만 둔다. 끌어서 어디로든 옮길 수 있다. */
 function NoteRow({ children, onPress, label, name, onDelete, onLayoutHeight }: { children: ReactNode; onPress?: () => void; label?: string; name: string; onDelete: () => void; onLayoutHeight?: (h: number) => void }) {
   return (
     <View style={styles.row} onLayout={onLayoutHeight && ((e) => onLayoutHeight(e.nativeEvent.layout.height))}>
@@ -691,63 +733,12 @@ function NoteRow({ children, onPress, label, name, onDelete, onLayoutHeight }: {
 }
 
 /**
- * 두 장소 사이 구간. 왼쪽 줄 위의 거리를 누르면 구글 지도 길 안내가 열린다.
- * 이동 수단(도보·대중교통·차)은 세로로 쌓고, 그 오른쪽에 이동 메모를 더하는 칸을 둔다.
+ * 두 장소 사이 구간의 목록 칸. 왼쪽 줄 자리는 비워 두고(LegColumn 이 줄 위에 겹쳐 그린다) 오른쪽에 이동 메모 더하기 칸만 둔다.
  */
-function LegRow({ leg, status, selected, onPress, onMode, onRetry, onAddNote, onDirections }: { leg: Leg; status: LegStatus | undefined; selected: boolean; onPress: () => void; onMode: (m: TravelMode) => void; onRetry: () => void; onAddNote: () => void; onDirections: () => void }) {
-  const option = selectedOption(leg);
-  const loading = status === 'loading';
-  const failed = status === 'offline' || status === 'error';
-  const distance = option && !loading ? formatDistance(option.distanceMeters) : failed ? '—' : '…';
-  const info = loading
-    ? t('map.routeLoading')
-    : option
-      ? t('leg.minutes', { min: Math.round(option.durationSeconds / 60) })
-      : status === 'offline'
-        ? t('map.routeOffline')
-        : status === 'error'
-          ? t('map.routeError')
-          : t('map.routeLoading');
+function LegRow({ onAddNote }: { onAddNote: () => void }) {
   return (
-    <View style={styles.row}>
-      <Rail>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${distance} ${leg.mode === 'transit' ? t('leg.transitInfo') : t('leg.navigate')}`}
-          onPress={onDirections}
-          hitSlop={8}
-          style={({ pressed }) => [styles.pill, selected && styles.pillOn, pressed && { opacity: 0.7 }]}
-        >
-          <Text style={[styles.pillText, selected && { color: colors.card }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{`${distance} ↗`}</Text>
-        </Pressable>
-      </Rail>
-      <View style={styles.legBody}>
-        <View style={styles.modes} accessibilityRole="radiogroup">
-          {MODES.map((m) => {
-            const on = leg.mode === m;
-            return (
-              <Pressable
-                key={m}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: on }}
-                accessibilityLabel={t(`mode.${m}`)}
-                onPress={() => !on && onMode(m)}
-                style={[styles.mode, on && styles.modeOn]}
-              >
-                <Text style={[styles.modeText, on && styles.modeTextOn]}>{t(`mode.${m}`)}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-        <Pressable onPress={onPress} hitSlop={6}>
-          <Text style={styles.legText}>{info}</Text>
-        </Pressable>
-        {failed && (
-          <Pressable accessibilityRole="button" onPress={onRetry} hitSlop={6}>
-            <Text style={styles.retry}>{t('common.retry')}</Text>
-          </Pressable>
-        )}
-      </View>
+    <View style={[styles.row, { minHeight: LEG_MIN }]}>
+      <Rail />
       <Pressable accessibilityRole="button" accessibilityLabel={t('leg.addNote')} onPress={onAddNote} style={({ pressed }) => [styles.addNote, pressed && { opacity: 0.7 }]}>
         <Text style={styles.addNotePlus}>+</Text>
         <Text style={styles.addNoteText}>{t('leg.note')}</Text>
@@ -756,7 +747,113 @@ function LegRow({ leg, status, selected, onPress, onMode, onRetry, onAddNote, on
   );
 }
 
+/** 구간마다 LegColumn 을 목록 위 제자리에 겹쳐 그린다. 이동 수단 고르기는 한 번에 하나만 펼친다. */
+function LegColumns({ spans, status, selectedLeg, onSelect, onMode, onRetry, stops, openUrl }: { spans: { leg: Leg; top: number; height: number; measured: boolean }[]; status: Record<string, LegStatus | undefined>; selectedLeg: string | null; onSelect: (s: NonNullable<Selection>) => void; onMode: (legId: string, m: TravelMode) => void; onRetry: () => void; stops: Stop[]; openUrl: (url: string) => void }) {
+  const [open, setOpen] = useState<string | null>(null);
+  return (
+    <>
+      {spans.map(({ leg, top, height, measured }) => (
+        <LegColumn
+          key={leg.id}
+          hidden={!measured}
+          leg={leg}
+          top={top}
+          height={height}
+          status={status[leg.id]}
+          selected={selectedLeg === leg.id}
+          open={open === leg.id}
+          onToggle={() => {
+            setOpen(open === leg.id ? null : leg.id);
+            onSelect({ type: 'leg', id: leg.id });
+          }}
+          onMode={(m) => {
+            setOpen(null);
+            if (leg.mode !== m) onMode(leg.id, m);
+          }}
+          onRetry={onRetry}
+          onDirections={() => {
+            setOpen(null);
+            const from = stops.find((x) => x.id === leg.fromStopId);
+            const to = stops.find((x) => x.id === leg.toStopId);
+            if (from && to) openUrl(directionsUrl(from, to, leg.mode));
+          }}
+        />
+      ))}
+    </>
+  );
+}
+
+const MODE_SYMBOL: Record<TravelMode, SFSymbol> = { walk: 'figure.walk', transit: 'tram.fill', drive: 'car.fill' };
+const MODE_TEXT: Record<TravelMode, string> = { walk: '도', transit: '대', drive: '차' };
+
+function ModeIcon({ mode, color, size = 14 }: { mode: TravelMode; color: string; size?: number }) {
+  return <SymbolView name={MODE_SYMBOL[mode]} size={size} tintColor={color} fallback={<Text style={{ fontSize: size * 0.8, color }}>{MODE_TEXT[mode]}</Text>} />;
+}
+
+/**
+ * 두 장소를 잇는 줄 위의 구간 버튼 (목록 위에 겹쳐 그린다). 앞 장소 카드 아래부터 다음 장소 카드 위까지의 가운데에 놓인다.
+ * 평소에는 이동 수단 아이콘·거리·시간을 담은 버튼 하나. 누르면 옆으로 이동 수단 고르기와 구글 지도 길 안내가 펼쳐진다.
+ */
+function LegColumn({ leg, status, selected, top, height, hidden, open, onToggle, onMode, onRetry, onDirections }: { hidden?: boolean; leg: Leg; status: LegStatus | undefined; selected: boolean; top: number; height: number; open: boolean; onToggle: () => void; onMode: (m: TravelMode) => void; onRetry: () => void; onDirections: () => void }) {
+  const option = selectedOption(leg);
+  const loading = status === 'loading';
+  const failed = status === 'offline' || status === 'error';
+  const distance = option && !loading ? formatDistance(option.distanceMeters) : failed ? '—' : '…';
+  const time = option && !loading ? t('leg.minutes', { min: Math.round(option.durationSeconds / 60) }) : '';
+  const on = selected || open;
+  return (
+    <View pointerEvents="box-none" style={[styles.legColumn, { top, height }, hidden && { opacity: 0 }, open && { zIndex: 10 }]} testID={`leg:${leg.id}`}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`${t(`mode.${leg.mode}`)} ${distance} ${time} ${t('leg.change')}`}
+        onPress={onToggle}
+        hitSlop={6}
+        style={({ pressed }) => [styles.legButton, on && styles.legButtonOn, pressed && { opacity: 0.8 }]}
+      >
+        <ModeIcon mode={leg.mode} color={on ? colors.card : colors.ink} />
+        <Text style={[styles.legDistance, on && { color: colors.card }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+          {distance}
+        </Text>
+        {time !== '' && <Text style={[styles.legTime, on && { color: colors.card }]}>{time}</Text>}
+      </Pressable>
+      {failed && !open && (
+        <Text style={[styles.retry, styles.legRetry]} onPress={onRetry}>
+          {t('common.retry')}
+        </Text>
+      )}
+      {open && (
+        <View pointerEvents="box-none" style={styles.legMenuWrap}>
+        <View style={styles.legMenu}>
+          <View style={styles.legModes} accessibilityRole="radiogroup">
+            {MODES.map((m) => {
+              const sel = leg.mode === m;
+              return (
+                <Pressable key={m} accessibilityRole="radio" accessibilityState={{ selected: sel }} accessibilityLabel={t(`mode.${m}`)} onPress={() => onMode(m)} style={[styles.legMode, sel && styles.modeOn]}>
+                  <ModeIcon mode={m} color={sel ? colors.card : colors.inkSoft} />
+                  <Text style={[styles.modeText, sel && styles.modeTextOn]}>{t(`mode.${m}`)}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${distance} ${leg.mode === 'transit' ? t('leg.transitInfo') : t('leg.navigate')}`}
+            onPress={onDirections}
+            style={({ pressed }) => [styles.legNav, pressed && { opacity: 0.7 }]}
+          >
+            <Text style={styles.legNavText}>{leg.mode === 'transit' ? t('leg.transitInfo') : t('leg.navigate')}</Text>
+          </Pressable>
+        </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
 const RAIL = 64;
+/** 메모가 없을 때 구간 칸 높이 (줄 위 구간 버튼이 들어가는 높이) */
+const LEG_MIN = 84;
 const DOT = 30;
 
 const styles = StyleSheet.create({
@@ -797,19 +894,29 @@ const styles = StyleSheet.create({
   pill: { maxWidth: RAIL - 4, paddingVertical: 3, paddingHorizontal: space.xs + 2, borderRadius: radius.pill, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
   pillOn: { backgroundColor: colors.route, borderColor: colors.route },
   pillText: { fontSize: fonts.size.xs, fontWeight: '600', color: colors.ink },
-  legBody: { paddingVertical: space.sm, gap: space.xs + 2, alignItems: 'flex-start' },
-  mode: { paddingVertical: 5, paddingHorizontal: space.md, borderRadius: radius.md },
+  legColumn: { position: 'absolute', left: 0, width: RAIL, alignItems: 'center', justifyContent: 'center' },
+  legButton: { width: RAIL - 6, alignItems: 'center', gap: 1, paddingVertical: 5, borderRadius: radius.md, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
+  legButtonOn: { backgroundColor: colors.route, borderColor: colors.route },
+  legDistance: { fontSize: fonts.size.xs, fontWeight: '700', color: colors.ink },
+  legTime: { fontSize: 10, color: colors.inkSoft },
+  legRetry: { marginTop: 4 },
+  // 펼친 창은 구간 버튼과 같은 높이 가운데에, 내용만큼만
+  legMenuWrap: { position: 'absolute', left: RAIL, top: 0, bottom: 0, justifyContent: 'center', alignItems: 'flex-start' },
+  legMenu: { gap: space.xs, padding: space.xs, borderRadius: radius.md + 2, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } },
+  legModes: { flexDirection: 'row', gap: 2 },
+  legMode: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6, paddingHorizontal: space.sm, borderRadius: radius.md },
+  legNav: { paddingVertical: 6, paddingHorizontal: space.sm, borderRadius: radius.md, backgroundColor: colors.paper, alignItems: 'center' },
+  legNavText: { fontSize: fonts.size.xs, fontWeight: '600', color: colors.ink },
   modeOn: { backgroundColor: colors.ink },
   modeText: { fontSize: fonts.size.xs, color: colors.inkSoft, fontWeight: '600' },
   modeTextOn: { color: colors.card },
   retry: { fontSize: fonts.size.xs, color: colors.accent, fontWeight: '700' },
   legText: { fontSize: fonts.size.sm, color: colors.inkSoft },
-  addNote: { flex: 1, alignSelf: 'stretch', marginVertical: space.sm, marginLeft: space.md, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.line, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card, gap: 2 },
+  addNote: { flex: 1, alignSelf: 'stretch', marginVertical: space.sm, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.line, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card, gap: 2 },
   addNotePlus: { fontSize: 22, lineHeight: 24, color: colors.ink, fontWeight: '300' },
   addNoteText: { fontSize: 11, color: colors.inkSoft, fontWeight: '600' },
   noteMemo: { fontSize: fonts.size.xs, color: colors.inkSoft, marginLeft: 24 },
   noteCard: { flexDirection: 'row', alignItems: 'center', marginVertical: space.xs, padding: space.md, borderRadius: radius.lg, backgroundColor: colors.card, gap: space.sm, borderWidth: 1, borderColor: colors.line },
-  modes: { flexDirection: 'column', padding: 2, gap: 2, borderRadius: radius.md + 2, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
   hiddenCard: { padding: space.md, borderStyle: 'dashed' },
   editCard: { padding: space.md },
   fab: {

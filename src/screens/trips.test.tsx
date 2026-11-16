@@ -207,22 +207,28 @@ test('trip home shows the real distance of each leg by its travel mode', async (
   const meters = [1100, 756];
   sv.routes.compute = async (_from, _to, mode) => ({ id: mode + meters.length, kind: 'default', polyline: [], distanceMeters: meters.shift() ?? 0, durationSeconds: 600 });
   await render(home(sv, trip.id));
-  expect(await screen.findByText('1.1km ↗')).toBeTruthy();
-  expect(screen.getByText('756m ↗')).toBeTruthy();
+  // 줄 위의 구간 버튼 하나에 이동 수단·거리·시간이 함께 나온다
+  expect(await screen.findByText('1.1km')).toBeTruthy();
+  expect(screen.getByText('756m')).toBeTruthy();
   expect(screen.getAllByText('10분')).toHaveLength(2);
-  expect(screen.getAllByRole('radio', { name: '도보', selected: true })).toHaveLength(2);
+  expect(screen.getAllByLabelText(/^도보 .* 이동 수단 바꾸기$/)).toHaveLength(2);
+  // 고르는 창은 누르기 전에는 펼쳐지지 않는다
+  expect(screen.queryByRole('radio', { name: '대중교통' })).toBeNull();
 });
 
 test('changing a leg to transit re-measures it with that mode', async () => {
   const { sv, trip } = await dayWithStops(['A', 'B']);
   sv.routes.compute = async (_from, _to, mode) => ({ id: mode, kind: 'default', polyline: [], distanceMeters: mode === 'transit' ? 2400 : 900, durationSeconds: 600 });
   await render(home(sv, trip.id));
-  await screen.findByText('900m ↗');
-  // 이동 수단은 펼치지 않아도 늘 보이고, 언제든 다시 바꿀 수 있다
+  await screen.findByText('900m');
+  // 구간 버튼을 누르면 이동 수단 고르기가 펼쳐지고, 고르면 다시 접힌다
+  await fireEvent.press(screen.getByLabelText(/이동 수단 바꾸기$/));
   await fireEvent.press(screen.getByRole('radio', { name: '대중교통' }));
-  expect(await screen.findByText('2.4km ↗')).toBeTruthy();
+  expect(await screen.findByText('2.4km')).toBeTruthy();
+  expect(screen.queryByRole('radio', { name: '도보' })).toBeNull();
+  await fireEvent.press(screen.getByLabelText(/이동 수단 바꾸기$/));
   await fireEvent.press(screen.getByRole('radio', { name: '도보' }));
-  expect(await screen.findByText('900m ↗')).toBeTruthy();
+  expect(await screen.findByText('900m')).toBeTruthy();
 });
 
 test('tapping a place card opens that place right away', async () => {
@@ -295,15 +301,19 @@ test('plan items can be checked off right from the itinerary', async () => {
   expect(await screen.findByRole('checkbox', { name: '우산', checked: true })).toBeTruthy();
 });
 
-test('tapping the distance of a leg opens Google Maps: navigation for walking/driving, transit options for transit', async () => {
+test('the leg button opens a menu with Google Maps directions: navigation for walking/driving, transit options for transit', async () => {
   const { sv, trip } = await dayWithStops(['A', 'B']);
   const opened: string[] = [];
   await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={noop} onOpenStop={noop} onExpenses={noop} onSettings={noop} openUrl={(u) => void opened.push(u)} />));
-  expect(screen.queryByText('↗ 구글 지도 길 안내')).toBeNull(); // 따로 길 안내 버튼은 없다
-  await fireEvent.press(await screen.findByLabelText(/구글 지도 길 안내$/));
+  // 길 안내는 구간 버튼을 눌러 펼친 창 안에 있다
+  expect(screen.queryByLabelText(/구글 지도 길 안내$/)).toBeNull();
+  await fireEvent.press(await screen.findByLabelText(/이동 수단 바꾸기$/));
+  await fireEvent.press(screen.getByLabelText(/구글 지도 길 안내$/));
   expect(opened[0]).toContain('travelmode=walking');
   expect(opened[0]).toContain('dir_action=navigate');
+  await fireEvent.press(screen.getByLabelText(/이동 수단 바꾸기$/));
   await fireEvent.press(screen.getByRole('radio', { name: '대중교통' }));
+  await fireEvent.press(await screen.findByLabelText(/이동 수단 바꾸기$/));
   await fireEvent.press(await screen.findByLabelText(/구글 지도 대중교통$/));
   expect(opened[1]).toContain('travelmode=transit');
   expect(opened[1]).not.toContain('dir_action');
@@ -348,6 +358,19 @@ test('a past day opens as a diary of visited places, and can be switched back to
   await fireEvent.press(screen.getByText('계획 보기'));
   expect(screen.queryByTestId('diary')).toBeNull();
   expect(screen.getByText('B')).toBeTruthy();
+});
+
+test('in the diary, a place without text invites you to write, and 편집 opens the place to edit text and photos', async () => {
+  const { sv, trip, days } = await dayWithStops(['A'], 2);
+  const [a] = await sv.repo.listStops(days[0].id);
+  await sv.repo.markStopArrived(a.id, new Date(2027, 2, 1, 10, 0).toISOString(), 'manual');
+  const open = jest.fn();
+  await render(withServices(sv, <TripHomeScreen tripId={trip.id} today="2027-03-02" onAddStop={noop} onOpenStop={open} onExpenses={noop} onSettings={noop} />));
+  await fireEvent.press(await screen.findByText('1일차'));
+  await fireEvent.press(await screen.findByText('이 장소에서의 추억을 글로 적어보세요'));
+  expect(open).toHaveBeenLastCalledWith(a.id);
+  await fireEvent.press(screen.getByLabelText('A 편집'));
+  expect(open).toHaveBeenCalledTimes(2);
 });
 
 test('in the diary, a photo opens full screen and the day ends with what was spent', async () => {

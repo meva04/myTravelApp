@@ -1,4 +1,4 @@
-import { bearingTo, fitRegion, isOffscreen, nearestStopAt, nextRegion, type Region } from './camera';
+import { allVisible, bearingTo, fitRegion, isOffscreen, nearestStopAt, nextRegion, type Region } from './camera';
 
 const zoomedIn: Region = { lat: 35.0, lng: 139.0, latDelta: 0.01, lngDelta: 0.01 };
 const pts = [{ lat: 35.0, lng: 139.0 }, { lat: 35.1, lng: 139.2 }];
@@ -69,4 +69,15 @@ test('nearestStopAt picks the stop under the finger and ignores far taps', () =>
   expect(nearestStopAt({ lat: 35.0029, lng: 139.0031 }, stops, zoomedIn)).toBe('b');
   expect(nearestStopAt({ lat: 35.0015, lng: 139.0015 }, stops, zoomedIn)).toBeNull();
   expect(nearestStopAt({ lat: 35, lng: 139 }, [], zoomedIn)).toBeNull();
+});
+
+test('the fit-all button hides when every place is on screen above the sheet, and comes back when zoomed in', () => {
+  const fit = fitRegion(pts);
+  expect(allVisible(pts, fit)).toBe(true);
+  expect(allVisible(pts, zoomedIn)).toBe(false);
+  // 아래 절반이 시트에 가리면, 화면 아래쪽에 있는 점은 안 보이는 것으로 친다
+  const low = [{ lat: fit.lat - fit.latDelta * 0.3, lng: fit.lng }];
+  expect(allVisible(low, fit, 0)).toBe(true);
+  expect(allVisible(low, fit, 0.5)).toBe(false);
+  expect(allVisible([], zoomedIn)).toBe(true);
 });

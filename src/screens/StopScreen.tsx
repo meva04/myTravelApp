@@ -118,7 +118,8 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
 
   if (!data) return <Screen>{null}</Screen>;
   const { stop, day, trip, expenses, days, photos, booking } = data;
-  const visited = stop.arrivedAt !== null;
+  // 도착 기록이 없어도 사진·글이 이미 있으면 (일기에서 편집하러 온 경우) 기록 칸을 보여 준다
+  const visited = stop.arrivedAt !== null || photos.length > 0 || stop.memo !== '';
   const details = info.state === 'ready' ? info.details : undefined;
   // 머리 사진: 내가 대표로 지정한 사진 > 방문해서 찍은 사진(슬라이드) > 구글 대표 사진
   const hero = heroImages(stop, photos, details?.photoUrls ?? [], resolvePhoto);

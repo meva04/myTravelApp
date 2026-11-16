@@ -13,6 +13,22 @@ export type CameraEvent =
 const STREET = 0.01;
 const MARGIN = 1.2;
 
+/**
+ * 모든 점이 지금 화면 안에 보이는지. 아래쪽 hiddenBottom(0~1) 만큼은 일정 시트가 가리므로 보이지 않는 것으로 친다.
+ * 가장자리에 걸친 점은 핀이 잘리니 안쪽 여유(inner)를 두고 판단한다.
+ */
+export function allVisible(points: LatLng[], region: Region, hiddenBottom = 0, inner = 0.06): boolean {
+  if (points.length === 0) return true;
+  const top = region.lat + region.latDelta / 2;
+  const height = region.latDelta * (1 - Math.min(Math.max(hiddenBottom, 0), 0.95));
+  const bottom = top - height;
+  const left = region.lng - region.lngDelta / 2;
+  const right = region.lng + region.lngDelta / 2;
+  const padLat = height * inner;
+  const padLng = region.lngDelta * inner;
+  return points.every((p) => p.lat <= top - padLat && p.lat >= bottom + padLat && p.lng >= left + padLng && p.lng <= right - padLng);
+}
+
 /** 모든 점이 보이는 영역. 점이 하나 이상 있어야 한다. */
 export function fitRegion(points: LatLng[]): Region {
   const lats = points.map((p) => p.lat);

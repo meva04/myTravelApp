@@ -133,6 +133,7 @@ export const ko = {
   'note.addTitle': '이동 메모 추가',
   'note.add': '추가하기',
   'note.photos': '사진 {n}',
+  'leg.change': '이동 수단 바꾸기',
   'leg.navigate': '↗ 구글 지도 길 안내',
   'leg.transitInfo': '↗ 구글 지도 대중교통',
   'check.add': '+ 할 일 추가',
@@ -150,6 +151,10 @@ export const ko = {
   'diary.spent': '이 날 쓴 돈',
   'diary.spentNone': '기록 없음',
   'diary.photoOpen': '사진 크게 보기',
+  'diary.morePhotos': '사진 {n}장 더 보기',
+  'diary.writePrompt': '이 장소에서의 추억을 글로 적어보세요',
+  'diary.edit': '편집',
+  'diary.editLabel': '{name} 편집',
   'diary.summary': '다녀온 곳 {n}곳 · 이동 {km}km · 사진 {photos}장',
 
   'search.placeholder': '장소 이름 또는 구글 지도 링크',
@@ -173,7 +178,7 @@ export const ko = {
   'add.done': '완료 ({n}곳 추가함)',
   'add.recent': '최근에 넣은 장소',
 
-  'map.fitAll': '전체 보기',
+  'map.fitAll': '한눈에 보기',
   'map.me': '현재 위치',
   'map.goHere': '여기로 이동',
   'map.routeLoading': '경로 불러오는 중',

@@ -2,7 +2,7 @@ import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 
-import { fitRegion, nearestStopAt, nextRegion, type CameraEvent, type Region } from '@/domain/camera';
+import { allVisible, fitRegion, nearestStopAt, nextRegion, type CameraEvent, type Region } from '@/domain/camera';
 import type { LatLng, Leg, Stop } from '@/domain/types';
 import { colors, fonts, radius, stopColor } from '@/theme/tokens';
 
@@ -24,6 +24,8 @@ type Props = {
   onLongPress?: (p: LatLng) => void;
   /** 아래를 가리는 일정 시트 높이. 지도 가운데·전체 보기가 그 위로 맞춰진다. */
   bottomInset?: number;
+  /** 하루 경로(방문지)가 지금 화면에 다 보이는지 바뀔 때 */
+  onAllVisible?: (visible: boolean) => void;
 };
 
 const toMap = (r: Region) => ({ latitude: r.lat, longitude: r.lng, latitudeDelta: r.latDelta, longitudeDelta: r.lngDelta });
@@ -32,8 +34,10 @@ const toMap = (r: Region) => ({ latitude: r.lat, longitude: r.lng, latitudeDelta
  * 하루 지도. 지도를 움직이는 코드는 send() 하나뿐이고,
  * nextRegion 이 영역을 돌려줄 때만 움직인다. 선택은 강조만 한다.
  */
-export const DayMap = forwardRef<DayMapHandle, Props>(function DayMap({ initialPoints, stops, legs, selection, onSelect, onRegion, onLongPress, bottomInset = 0 }, ref) {
+export const DayMap = forwardRef<DayMapHandle, Props>(function DayMap({ initialPoints, stops, legs, selection, onSelect, onRegion, onLongPress, bottomInset = 0, onAllVisible }, ref) {
   const map = useRef<MapView>(null);
+  // 구글 지도가 알려 주는 영역은 mapPadding(아래 시트) 을 이미 뺀 보이는 영역이라 따로 빼지 않는다
+  const report = (r: Region) => onAllVisible?.(allVisible(stops.map((s) => ({ lat: s.lat, lng: s.lng })), r));
   // 처음 그날의 지도를 열 때는 그 자리에서 전체 경로가 보이도록 시작한다 (애니메이션이 지도 준비 전에 사라지는 일 방지).
   // 이 컴포넌트는 방문지를 다 읽은 뒤에 그려진다.
   const [initial] = useState(() => (initialPoints.length > 0 ? fitRegion(initialPoints) : null));
@@ -68,6 +72,7 @@ export const DayMap = forwardRef<DayMapHandle, Props>(function DayMap({ initialP
         current.current = region;
         if (details?.isGesture) hasView.current = true;
         onRegion(region);
+        report(region);
       }}
       onPress={(e) => {
         // 방문지 판정은 여기서 한다. 지도 빈 곳을 누르면 선택을 풀지 않고 그대로 둔다.
