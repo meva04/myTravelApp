@@ -390,8 +390,9 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
       )}
     </>
   );
-  const panel = (
-    <>
+  // 날짜 탭과 그날 요약은 스크롤하지 않고 위에 고정한다
+  const header = (
+    <View style={styles.header}>
       <View style={styles.tabs}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }} style={{ flex: 1 }}>
           {days.map((d, i) => (
@@ -406,7 +407,16 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
         )}
         {view === 'plan' && rows.length > 0 && <Chip label={editing ? t('day.editDone') : t('day.edit')} selected={editing} onPress={() => setEditing(!editing)} />}
       </View>
-
+      {day && view === 'plan' && (
+        <>
+          <Txt kind="soft">{`${day.date} · ${dayLine}`}</Txt>
+          {unconverted !== '' && <Txt kind="soft">{`${t('expense.unconverted')}: ${unconverted}`}</Txt>}
+        </>
+      )}
+    </View>
+  );
+  const panel = (
+    <>
       {day && view === 'diary' && (
         <DiaryDay
           date={day.date}
@@ -424,9 +434,6 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
 
       {day && view === 'plan' && (
         <>
-          <Txt kind="soft">{`${day.date} · ${dayLine}`}</Txt>
-          {unconverted !== '' && <Txt kind="soft">{`${t('expense.unconverted')}: ${unconverted}`}</Txt>}
-
           {loaded && rows.length === 0 && (
             <Card>
               <Txt kind="soft">{t('day.empty')}</Txt>
@@ -494,6 +501,7 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
         // 펼친 폴더블(아이폰 듀오)·큰 화면: 일정은 왼쪽 판, 지도는 오른쪽에 나란히
         <View style={styles.split} testID="split-layout">
           <View style={[styles.panel, { width: panelWidth }]}>
+            {header}
             <ScrollView contentContainerStyle={styles.sheet}>{panel}</ScrollView>
           </View>
           <View style={{ flex: 1 }}>{mapView}</View>
@@ -515,6 +523,7 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
             backgroundStyle={styles.sheetBg}
             handleIndicatorStyle={{ backgroundColor: colors.line, width: 44 }}
           >
+            {header}
             <BottomSheetScrollView contentContainerStyle={styles.sheet}>{panel}</BottomSheetScrollView>
           </BottomSheet>
         </>
@@ -719,6 +728,7 @@ const styles = StyleSheet.create({
   handle: { height: HANDLE, paddingVertical: 0, justifyContent: 'center' },
   sheetBg: { backgroundColor: colors.paper, borderTopLeftRadius: radius.lg + 4, borderTopRightRadius: radius.lg + 4 },
   sheet: { paddingHorizontal: space.lg, paddingTop: space.xs, paddingBottom: 120, gap: space.md },
+  header: { paddingHorizontal: space.lg, paddingTop: space.xs, paddingBottom: space.sm, gap: space.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.line },
   tabs: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   row: { flexDirection: 'row', alignItems: 'stretch' },
   rail: { width: RAIL, alignItems: 'center', justifyContent: 'center' },
