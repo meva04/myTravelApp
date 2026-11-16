@@ -49,6 +49,13 @@ jest.mock('@expo/ui/swift-ui', () => {
       React.createElement(TextInput, { accessibilityLabel: `${props.title} 선택기`, onChangeText: (v) => props.onDateChange?.(new Date(v)) }),
   };
 });
+// 동영상 재생·썸네일·사진첩은 기기에서만 돈다
+jest.mock('expo-video', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return { useVideoPlayer: () => ({ play: () => {}, pause: () => {}, loop: false }), VideoView: (props) => React.createElement(View, { testID: props.testID }) };
+});
+jest.mock('expo-video-thumbnails', () => ({ getThumbnailAsync: async () => ({ uri: 'file:///thumb.jpg' }) }));
 jest.mock('@expo/ui/swift-ui/modifiers', () => ({ datePickerStyle: () => ({}), labelsHidden: () => ({}) }));
 // 밀어서 삭제: 테스트에서는 내용과 삭제 버튼을 함께 그대로 보여 준다.
 jest.mock('react-native-gesture-handler/ReanimatedSwipeable', () => {

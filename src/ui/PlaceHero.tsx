@@ -1,8 +1,9 @@
-// 장소 화면 머리. 배경 사진 위에 이름과 주소를 얹는다.
-// 사진이 여러 장이면 몇 초마다 디졸브로 넘긴다.
+// 장소 화면 머리. 화면 맨 위(상태 표시줄 뒤)까지 사진을 채우고 그 위에 이름과 주소를 얹는다.
+// 사진이 여러 장이면 옆으로 밀어 넘긴다.
 import { Image } from 'expo-image';
-import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useContext, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
 import { t } from '@/i18n/ko';
 import { colors, fonts, radius, space } from '@/theme/tokens';
@@ -14,47 +15,54 @@ type Props = {
   /** 구글 사진이면 촬영자 표시 (구글 약관) */
   credit?: string;
   onOpenGoogle?: () => void;
+  /** 사진을 누르면 (크게 보기) */
+  onOpenImage?: (index: number) => void;
 };
 
-const SLIDE_MS = 4000;
-const FADE_MS = 900;
+const HEIGHT = 300;
 
-export function PlaceHero({ images, name, address, credit, onOpenGoogle }: Props) {
+export function PlaceHero({ images, name, address, credit, onOpenGoogle, onOpenImage }: Props) {
+  const { width } = useWindowDimensions();
+  const top = useContext(SafeAreaInsetsContext)?.top ?? 0;
   const [index, setIndex] = useState(0);
-  useEffect(() => {
-    if (images.length < 2) return;
-    const timer = setInterval(() => setIndex((i) => (i + 1) % images.length), SLIDE_MS);
-    return () => clearInterval(timer);
-  }, [images.length]);
-  const uri = images.length ? images[index % images.length] : null;
+  const has = images.length > 0;
 
   return (
-    <View style={styles.hero} testID="place-hero">
-      {uri && (
-        <Image
-          testID={`hero-image:${uri}`}
-          source={{ uri }}
+    <View style={[styles.hero, { height: HEIGHT + top }]} testID="place-hero">
+      {has && (
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
           style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          transition={{ duration: FADE_MS, effect: 'cross-dissolve' }}
-          accessibilityIgnoresInvertColors
-        />
+          onMomentumScrollEnd={(e) => setIndex(Math.round(e.nativeEvent.contentOffset.x / width))}
+        >
+          {images.map((uri, i) => (
+            <Pressable key={`${uri}:${i}`} disabled={!onOpenImage} onPress={() => onOpenImage?.(i)} style={{ width, height: HEIGHT + top }}>
+              <Image testID={`hero-image:${uri}`} source={{ uri }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} accessibilityIgnoresInvertColors />
+            </Pressable>
+          ))}
+        </ScrollView>
       )}
-      <View style={[StyleSheet.absoluteFill, uri ? styles.shade : styles.plain]} />
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, has ? styles.shade : styles.plain]} />
       {onOpenGoogle && (
-        <Pressable accessibilityRole="button" onPress={onOpenGoogle} hitSlop={8} style={styles.google}>
+        <Pressable accessibilityRole="button" onPress={onOpenGoogle} hitSlop={8} style={[styles.google, { top: top + space.md }]}>
           <Text style={styles.googleText}>{t('hero.openGoogle')}</Text>
         </Pressable>
       )}
-      <View style={styles.text}>
-        <Text style={[styles.name, !uri && { color: colors.ink }]}>{name}</Text>
-        {address ? <Text style={[styles.address, !uri && { color: colors.inkSoft }]} numberOfLines={2}>{address}</Text> : null}
+      <View style={styles.text} pointerEvents="none">
+        <Text style={[styles.name, !has && { color: colors.ink }]}>{name}</Text>
+        {address ? (
+          <Text style={[styles.address, !has && { color: colors.inkSoft }]} numberOfLines={2}>
+            {address}
+          </Text>
+        ) : null}
         {credit ? <Text style={styles.credit}>{t('hero.photoBy', { name: credit })}</Text> : null}
       </View>
       {images.length > 1 && (
-        <View style={styles.dots}>
+        <View style={styles.dots} pointerEvents="none">
           {images.map((u, i) => (
-            <View key={`${u}:${i}`} style={[styles.dot, i === index % images.length && styles.dotOn]} />
+            <View key={`${u}:${i}`} style={[styles.dot, i === index && styles.dotOn]} />
           ))}
         </View>
       )}
@@ -63,8 +71,8 @@ export function PlaceHero({ images, name, address, credit, onOpenGoogle }: Props
 }
 
 const styles = StyleSheet.create({
-  hero: { height: 260, marginHorizontal: -space.lg, marginTop: -space.lg, justifyContent: 'flex-end', overflow: 'hidden', backgroundColor: colors.accentSoft },
-  shade: { backgroundColor: 'rgba(0,0,0,0.35)' },
+  hero: { marginHorizontal: -space.lg, marginTop: -space.lg, justifyContent: 'flex-end', overflow: 'hidden', backgroundColor: colors.accentSoft },
+  shade: { backgroundColor: 'rgba(0,0,0,0.3)' },
   plain: { backgroundColor: colors.accentSoft },
   text: { padding: space.lg, gap: 2 },
   name: { fontSize: fonts.size.xl, fontWeight: '700', color: '#fff' },
@@ -72,7 +80,6 @@ const styles = StyleSheet.create({
   credit: { fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: space.xs },
   google: {
     position: 'absolute',
-    top: space.md,
     right: space.md,
     paddingVertical: space.xs + 2,
     paddingHorizontal: space.md,

@@ -4,6 +4,7 @@ import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { thumbOf } from '@/domain/media';
 import type { Photo, PlaceKind, Stop } from '@/domain/types';
 import type { PlaceDetails } from '@/google/places';
 import { useServices } from '@/state/ServicesContext';
@@ -47,7 +48,8 @@ export function KindIcon({ kind, size = 14, color = colors.ink }: { kind: PlaceK
 export function heroImages(stop: Pick<Stop, 'arrivedAt'>, photos: Photo[], google: string[], resolve: (uri: string) => string): { images: string[]; google: boolean } {
   const covers = photos.filter((p) => p.cover);
   const mine = covers.length ? covers : stop.arrivedAt ? photos : [];
-  if (mine.length) return { images: mine.map((p) => resolve(p.uri)), google: false };
+  // 동영상은 미리 만든 첫 장면 그림을 쓴다
+  if (mine.length) return { images: mine.map((p) => resolve(thumbOf(p.uri))), google: false };
   return { images: google.slice(0, 1), google: true };
 }
 

@@ -142,6 +142,12 @@ export type Booking = {
   checkOut?: string;
   checkInTime?: string; // 'HH:mm'
   checkOutTime?: string;
+  /** 예약 비용 (숙소) */
+  price?: number;
+  /** 예약 비용 통화 (없으면 여행 기준 통화) */
+  priceCurrency?: string;
+  /** 메모 (숙소) */
+  memo?: string;
   // 교통편
   carrier?: string;
   from?: BookingPlace;

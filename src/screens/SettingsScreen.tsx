@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 
+import type { Trip } from '@/domain/types';
 import { t } from '@/i18n/ko';
 import type { LocationAccess } from '@/location/geofenceCore';
 import { useLoad, useServices } from '@/state/ServicesContext';
-import { Button, Card, Field, Row, Screen, Txt } from '@/ui/kit';
+import { Button, Card, Chip, Field, Row, Screen, Txt } from '@/ui/kit';
 import { LocalCurrencyField } from '@/ui/Money';
+import { DateField } from '@/ui/PickerField';
+
+import { joinCities, splitCities } from './NewTripScreen';
 
 type Props = {
   tripId: string;
@@ -77,6 +81,8 @@ export function SettingsScreen({ tripId, getAccess, requestAlways, openSystemSet
 
   return (
     <Screen>
+      <TripInfoCard key={trip.id} trip={trip} onSaved={reload} />
+
       <Card>
         <Txt kind="heading">{t('settings.location')}</Txt>
         {access === 'always' && <Txt kind="soft">{t('settings.locationAlways')}</Txt>}
@@ -124,5 +130,83 @@ export function SettingsScreen({ tripId, getAccess, requestAlways, openSystemSet
 
       <Button kind="danger" label={t('common.delete')} onPress={remove} />
     </Screen>
+  );
+}
+
+/** 처음 정한 여행 이름·도시·날짜를 고친다. 날짜가 줄어 지워지는 날에 장소가 있으면 먼저 묻는다. */
+function TripInfoCard({ trip, onSaved }: { trip: Trip; onSaved: () => void }) {
+  const sv = useServices();
+  const { repo } = sv;
+  const [name, setName] = useState(trip.name);
+  const [cities, setCities] = useState(splitCities(trip.city));
+  const [cityDraft, setCityDraft] = useState('');
+  const [startDate, setStart] = useState(trip.startDate);
+  const [endDate, setEnd] = useState(trip.endDate);
+  const [invalid, setInvalid] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const addCity = () => {
+    const c = cityDraft.trim();
+    if (c && !cities.includes(c)) setCities([...cities, c]);
+    setCityDraft('');
+  };
+  const save = async () => {
+    const all = cityDraft.trim() && !cities.includes(cityDraft.trim()) ? [...cities, cityDraft.trim()] : cities;
+    const span = (Date.parse(endDate) - Date.parse(startDate)) / 86400000;
+    const ok = name.trim() !== '' && span >= 0 && span < 90;
+    setInvalid(!ok);
+    if (!ok) return;
+    const write = async () => {
+      const latest = (await repo.getTrip(trip.id)) ?? trip;
+      await repo.updateTrip({ ...latest, name: name.trim(), city: joinCities(all) });
+      if (startDate !== trip.startDate || endDate !== trip.endDate) {
+        await repo.setTripDates(trip.id, startDate, endDate);
+        sv.onItineraryChanged();
+      }
+      setCityDraft('');
+      setSaved(true);
+      onSaved();
+    };
+    // 줄어든 날짜에 장소가 있으면 지워도 되는지 묻는다
+    const days = await repo.listDays(trip.id);
+    const dropped = days.slice(span + 1);
+    let lost = 0;
+    for (const d of dropped) lost += (await repo.listStops(d.id)).length;
+    if (lost === 0) return void (await write());
+    Alert.alert(t('trip.shrinkTitle'), t('trip.shrinkBody', { days: dropped.length, stops: lost }), [
+      { text: t('common.cancel'), style: 'cancel' },
+      { text: t('common.save'), style: 'destructive', onPress: () => void write() },
+    ]);
+  };
+  return (
+    <Card>
+      <Txt kind="heading">{t('trip.info')}</Txt>
+      <Field placeholder={t('trip.name')} value={name} onChangeText={(v) => (setName(v), setSaved(false))} />
+      <Row>
+        <Field style={{ flex: 1 }} placeholder={t('trip.city')} value={cityDraft} onChangeText={setCityDraft} onSubmitEditing={addCity} returnKeyType="done" submitBehavior="submit" />
+        <Chip label={t('trip.addCity')} onPress={addCity} />
+      </Row>
+      {cities.length > 0 && (
+        <Row style={{ flexWrap: 'wrap' }}>
+          {cities.map((c) => (
+            <Chip key={c} label={`${c} ✕`} selected accessibilityLabel={`${c} ${t('common.delete')}`} onPress={() => (setCities(cities.filter((x) => x !== c)), setSaved(false))} />
+          ))}
+        </Row>
+      )}
+      <DateField
+        label={t('trip.startDate')}
+        value={startDate}
+        onChange={(v) => {
+          // 시작일을 옮기면 여행 길이는 그대로 두고 종료일도 함께 옮긴다
+          const len = Date.parse(endDate) - Date.parse(startDate);
+          setStart(v);
+          setEnd(new Date(Date.parse(v) + Math.max(0, len)).toISOString().slice(0, 10));
+          setSaved(false);
+        }}
+      />
+      <DateField label={t('trip.endDate')} value={endDate} min={startDate} onChange={(v) => (setEnd(v), setSaved(false))} />
+      {invalid && <Txt kind="soft">{t('trip.invalid')}</Txt>}
+      {saved && <Txt kind="soft">{t('trip.saved')}</Txt>}
+      <Button label={t('common.save')} onPress={() => void save()} />
+    </Card>
   );
 }

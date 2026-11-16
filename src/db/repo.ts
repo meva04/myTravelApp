@@ -159,6 +159,27 @@ export function makeRepo(db: Db, newId: () => Id) {
         t.name, t.city, t.baseCurrency, JSON.stringify(t.rates), JSON.stringify(t.members ?? []), t.localCurrency ?? null, t.id,
       ]);
     },
+    /**
+     * 여행 날짜를 바꾼다. 있던 날은 순서대로 새 날짜로 옮기고 (1일차는 새 1일차로), 모자라면 날을 더하고
+     * 남으면 뒤쪽 날을 지운다. 그 날 적은 비용 날짜도 함께 옮긴다.
+     */
+    async setTripDates(tripId: Id, startDate: string, endDate: string): Promise<void> {
+      const days = await db.all<Day>('SELECT id, tripId, date FROM day WHERE tripId = ? ORDER BY date', [tripId]);
+      const dates = datesBetween(startDate, endDate);
+      const moved: Record<string, string> = {};
+      for (let i = 0; i < days.length; i++) {
+        if (i < dates.length) {
+          moved[days[i].date] = dates[i];
+          await db.run('UPDATE day SET date = ? WHERE id = ?', [dates[i], days[i].id]);
+        } else {
+          await db.run('DELETE FROM day WHERE id = ?', [days[i].id]);
+        }
+      }
+      for (let i = days.length; i < dates.length; i++) await db.run('INSERT INTO day (id, tripId, date) VALUES (?,?,?)', [newId(), tripId, dates[i]]);
+      const expenses = await db.all<{ id: Id; date: string }>('SELECT id, date FROM expense WHERE tripId = ?', [tripId]);
+      for (const e of expenses) if (moved[e.date] && moved[e.date] !== e.date) await db.run('UPDATE expense SET date = ? WHERE id = ?', [moved[e.date], e.id]);
+      await db.run('UPDATE trip SET startDate = ?, endDate = ? WHERE id = ?', [startDate, endDate, tripId]);
+    },
     async deleteTrip(id: Id): Promise<void> {
       await db.run('DELETE FROM trip WHERE id = ?', [id]);
     },
@@ -173,6 +194,20 @@ export function makeRepo(db: Db, newId: () => Id) {
       return db.all<Day>('SELECT id, tripId, date FROM day WHERE date = ?', [date]);
     },
 
+    /** 최근에 일정에 넣은 장소들 (모든 여행, 새것부터, 같은 장소는 한 번). 예약으로 만든 장소는 뺀다. */
+    async listRecentStops(limit = 12): Promise<Stop[]> {
+      const rows = (await db.all<StopRow>(`SELECT ${stopCols} FROM stop WHERE bookingId IS NULL ORDER BY rowid DESC LIMIT ?`, [limit * 5])).map(toStop);
+      const seen = new Set<string>();
+      const out: Stop[] = [];
+      for (const s of rows) {
+        const key = s.placeId ?? `${s.name}@${s.lat.toFixed(4)},${s.lng.toFixed(4)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(s);
+        if (out.length >= limit) break;
+      }
+      return out;
+    },
     async listStops(dayId: Id): Promise<Stop[]> {
       return (await db.all<StopRow>(`SELECT ${stopCols} FROM stop WHERE dayId = ? ORDER BY "order"`, [dayId])).map(toStop);
     },

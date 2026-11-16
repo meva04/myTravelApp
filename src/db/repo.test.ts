@@ -220,3 +220,27 @@ test('travel notes keep their own record, photos and expenses, and old checklist
   expect(await repo.getNote(n.id)).toBeNull();
   expect((await repo.listExpenses(trip.id)).find((x) => x.id === e.id)?.noteId).toBeNull(); // 비용은 남는다
 });
+
+test('changing trip dates moves each day (and its places and expenses) to the new dates in order', async () => {
+  const { repo, trip, days } = await setup();
+  await repo.saveStops(days[0].id, [stop(days[0].id, 0, '센소지')]);
+  await repo.addExpense({ tripId: trip.id, date: '2027-03-01', stopId: null, amount: 1000, currency: 'KRW', category: 'food', memo: '' });
+  await repo.setTripDates(trip.id, '2027-05-10', '2027-05-13');
+  const moved = await repo.listDays(trip.id);
+  expect(moved.map((d) => d.date)).toEqual(['2027-05-10', '2027-05-11', '2027-05-12', '2027-05-13']);
+  expect(moved[0].id).toBe(days[0].id);
+  expect((await repo.listStops(moved[0].id)).map((s) => s.name)).toEqual(['센소지']);
+  expect((await repo.listExpenses(trip.id)).map((e) => e.date)).toEqual(['2027-05-10']);
+  const t = await repo.getTrip(trip.id);
+  expect([t?.startDate, t?.endDate]).toEqual(['2027-05-10', '2027-05-13']);
+  // 줄이면 뒤쪽 날이 빠진다
+  await repo.setTripDates(trip.id, '2027-05-10', '2027-05-10');
+  expect((await repo.listDays(trip.id)).map((d) => d.id)).toEqual([days[0].id]);
+});
+
+test('recent places come newest first, once each, without booking places', async () => {
+  const { repo, days } = await setup();
+  await repo.saveStops(days[0].id, [stop(days[0].id, 0, 'A'), stop(days[0].id, 1, 'B'), { ...stop(days[0].id, 2, '호텔'), bookingId: 'b1' }]);
+  await repo.saveStops(days[1].id, [stop(days[1].id, 0, 'A')]);
+  expect((await repo.listRecentStops()).map((s) => s.name)).toEqual(['A', 'B']);
+});

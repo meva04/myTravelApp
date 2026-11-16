@@ -64,7 +64,8 @@
           "photosPermission": "방문한 곳에 사진을 남기기 위해 사진첩에 접근합니다",
           "cameraPermission": "방문한 곳에서 사진을 찍어 기록하기 위해 카메라를 사용합니다"
         }
-      ]
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

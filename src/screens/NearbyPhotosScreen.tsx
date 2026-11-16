@@ -118,9 +118,10 @@ export function NearbyPhotosScreen({ stopId, findPhotos, importPhoto, onDone }: 
               onPress={() => toggle(item)}
               style={{ width: size, height: size }}
             >
-              <Image source={{ uri: item.uri }} style={[StyleSheet.absoluteFill, done && { opacity: 0.4 }]} contentFit="cover" recyclingKey={item.assetId} />
+              <Image source={{ uri: item.uri }} style={[StyleSheet.absoluteFill, done && { opacity: 0.45 }]} contentFit="cover" recyclingKey={item.assetId} cachePolicy="memory" />
               {done && <Text style={styles.saved}>{t('photos.saved')}</Text>}
-              {!done && <View style={[styles.check, on && styles.checkOn]}>{on && <Text style={styles.checkMark}>✓</Text>}</View>}
+              {/* 이미 넣은 사진은 선택된 채로 잠가 두어 다시 고를 수 없다 */}
+              <View style={[styles.check, (on || done) && styles.checkOn, done && styles.checkDone]}>{(on || done) && <Text style={styles.checkMark}>✓</Text>}</View>
             </Pressable>
           );
         }}
@@ -152,6 +153,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkOn: { backgroundColor: colors.accent, borderColor: colors.card },
+  checkDone: { backgroundColor: colors.inkSoft },
   checkMark: { color: colors.card, fontWeight: '700', fontSize: fonts.size.xs },
   saved: { position: 'absolute', top: space.xs, left: space.xs, fontSize: fonts.size.xs, fontWeight: '700', color: colors.ink },
   footer: { position: 'absolute', left: space.lg, right: space.lg, bottom: space.xxl },

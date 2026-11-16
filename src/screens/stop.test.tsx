@@ -67,7 +67,8 @@ test('an expense with a non-numeric amount is rejected', async () => {
 });
 
 const details = { placeId: 'p1', address: '일본 도쿄도 다이토구 아사쿠사 2-3-1', photoUrls: ['https://g/photo1'], photoAuthors: ['Kim'] };
-const heroUri = () => (screen.getByTestId(/^hero-image:/).props.testID as string).slice('hero-image:'.length);
+// 머리 사진은 옆으로 넘기는 줄이라 첫 장을 본다
+const heroUri = () => (screen.getAllByTestId(/^hero-image:/)[0].props.testID as string).slice('hero-image:'.length);
 
 test('the hero shows the name, the address and a Google photo with its credit', async () => {
   const { sv } = await setup();

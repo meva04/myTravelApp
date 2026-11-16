@@ -7,6 +7,7 @@ import { t } from '@/i18n/ko';
 import { space } from '@/theme/tokens';
 
 import { BookingEditor, bookingReady } from './BookingEditor';
+import { formatMoney } from './format';
 import { Button, Txt } from './kit';
 import { SheetModal } from './SheetModal';
 
@@ -44,6 +45,6 @@ export function blankBooking(id: string, tripId: string, kind: Booking['kind']):
 
 /** 예약 목록에 보일 한 줄 */
 export function bookingSummary(b: Booking): string {
-  if (b.kind === 'lodging') return `${b.title} · ${b.checkIn ?? ''} ~ ${b.checkOut ?? ''}`;
+  if (b.kind === 'lodging') return [b.title, `${b.checkIn ?? ''} ~ ${b.checkOut ?? ''}`, b.price !== undefined ? formatMoney(b.price, b.priceCurrency ?? 'KRW') : ''].filter(Boolean).join(' · ');
   return [t(`booking.kind.${b.kind}` as 'booking.kind.flight'), b.title, b.from && b.to ? `${b.from.name} → ${b.to.name}` : '', b.departDate, b.departTime].filter(Boolean).join(' · ');
 }

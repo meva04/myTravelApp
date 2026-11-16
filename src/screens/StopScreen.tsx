@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Alert, Image, ScrollView, StyleSheet, View } from 'react-native';
+import { Image } from 'expo-image';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { peopleOf, summarizeExpenses } from '@/domain/expenses';
 import { parseChecklist, serializeChecklist, type CheckItem } from '@/domain/checklist';
+import { isVideo, thumbOf } from '@/domain/media';
 import type { Photo } from '@/domain/types';
 import { OfflineError } from '@/google/errors';
 import type { PlaceDetails } from '@/google/places';
@@ -11,7 +13,7 @@ import { googleMapsUrl } from '@/map/directions';
 import type { StopPrompt } from '@/location/promptsCore';
 import { deleteStop, moveStop, setSkipped } from '@/state/itineraryOps';
 import { useLoad, useServices } from '@/state/ServicesContext';
-import { colors, radius, space } from '@/theme/tokens';
+import { colors, fonts, radius, space } from '@/theme/tokens';
 import { ExpenseForm } from '@/ui/ExpenseForm';
 import { currencyChoices, defaultCurrencyOf } from '@/domain/currency';
 import { localToday } from '@/location/clock';
@@ -20,6 +22,7 @@ import { formatAmounts, formatMoney, formatTime } from '@/ui/format';
 import { Button, Card, Chip, Field, Row, Screen, Txt } from '@/ui/kit';
 import { Checklist } from '@/ui/Checklist';
 import { DateField, TimeField } from '@/ui/PickerField';
+import { PhotoViewer } from '@/ui/PhotoViewer';
 import { PlaceHero } from '@/ui/PlaceHero';
 import { heroImages } from '@/ui/PlaceVisual';
 import { SeatMap } from '@/ui/SeatMap';
@@ -28,7 +31,8 @@ import { Stamp } from '@/ui/Stamp';
 
 type Props = {
   stopId: string;
-  pickPhoto: (source: 'library' | 'camera') => Promise<Omit<Photo, 'id' | 'stopId'>[]>;
+  /** have: 이미 넣은 사진첩 사진 id (다시 고르지 않게) */
+  pickPhoto: (source: 'library' | 'camera', have?: string[]) => Promise<Omit<Photo, 'id' | 'stopId'>[]>;
   resolvePhoto: (uri: string) => string;
   openUrl: (url: string) => void;
   now?: () => string;
@@ -65,6 +69,8 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
   // 화면을 보는 동안은 이 사본이 체크리스트의 기준이다 (입력 중 다시 불러와 칸이 흔들리지 않게).
   const [planItems, setPlanItems] = useState<CheckItem[]>();
   const [info, setInfo] = useState<Info>({ state: 'loading' });
+  // 크게 보는 중인 사진들과 처음 장
+  const [viewing, setViewing] = useState<{ uris: string[]; start: number } | null>(null);
   const placeId = data?.stop.placeId;
 
   useEffect(() => {
@@ -117,6 +123,9 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
   // 머리 사진: 내가 대표로 지정한 사진 > 방문해서 찍은 사진(슬라이드) > 구글 대표 사진
   const hero = heroImages(stop, photos, details?.photoUrls ?? [], resolvePhoto);
   const heroIsGoogle = hero.google;
+  const heroPhotos = photos.filter((p) => p.cover).length ? photos.filter((p) => p.cover) : photos;
+  // 계획한 날이 지났으면 "도착했어요" 대신 "다녀왔어요"
+  const arrivedLabel = localToday() > day.date ? t('prompt.wentThere') : t('prompt.arrived');
 
   // 화면의 옛 사본으로 다른 칸을 덮어쓰지 않도록, 바꾼 칸만 저장한다.
   const arrive = async () => {
@@ -148,7 +157,11 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
     void repo.setStopPlanNote(stopId, serializeChecklist(next));
   };
   const addPhoto = async (source: 'library' | 'camera') => {
-    for (const picked of await pickPhoto(source)) await repo.addPhoto({ ...picked, stopId });
+    const have = data ? data.photos.map((p) => p.assetId).filter((x): x is string => !!x) : [];
+    for (const picked of await pickPhoto(source, have)) {
+      if (picked.assetId && have.includes(picked.assetId)) continue; // 같은 사진은 한 번만
+      await repo.addPhoto({ ...picked, stopId });
+    }
     reload();
   };
   const toggleCover = async (p: Photo) => {
@@ -173,6 +186,8 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
         address={details?.address}
         credit={heroIsGoogle ? details?.photoAuthors[0] : undefined}
         onOpenGoogle={() => openUrl(googleMapsUrl(stop))}
+        // 내 사진이면 눌러서 원본을 크게 본다
+        onOpenImage={heroIsGoogle ? undefined : (i) => setViewing({ uris: heroPhotos.map((p) => resolvePhoto(p.uri)), start: i })}
       />
 
       {booking && (
@@ -182,6 +197,8 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
           {booking.kind !== 'lodging' && booking.from && booking.to && (
             <Txt kind="soft">{`${booking.from.name} ${booking.departTime ?? ''} → ${booking.to.name} ${booking.arriveTime ?? ''}`}</Txt>
           )}
+          {booking.kind === 'lodging' && booking.price !== undefined && <Txt kind="soft">{`${t('booking.price')} ${formatMoney(booking.price, booking.priceCurrency ?? trip.baseCurrency)}`}</Txt>}
+          {booking.memo ? <Txt kind="soft">{booking.memo}</Txt> : null}
           <SeatMap booking={booking} />
           {onEditBooking && <Button kind="ghost" label={t('booking.edit')} onPress={() => onEditBooking(booking.id)} />}
         </Card>
@@ -252,7 +269,7 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
       {!visited && !stop.skipped && (
         <Card>
           <Txt kind="soft">{t('stop.notVisited')}</Txt>
-          <Button kind="ghost" label={t('prompt.arrived')} onPress={() => void arrive()} />
+          <Button kind="ghost" label={arrivedLabel} onPress={() => void arrive()} />
         </Card>
       )}
 
@@ -281,14 +298,20 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
           <Card>
             <Txt kind="heading">{t('stop.photos')}</Txt>
             {photos.length > 0 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>
-                {photos.map((p) => (
-                  <View key={p.id} style={{ gap: space.xs }}>
-                    <Image source={{ uri: resolvePhoto(p.uri) }} style={{ width: 120, height: 120, borderRadius: radius.md }} />
-                    <Row>
-                      <Chip label={p.cover ? t('stop.coverOn') : t('stop.cover')} selected={p.cover} onPress={() => void toggleCover(p)} />
-                      <Chip label={t('common.delete')} onPress={() => void removePhoto(p)} />
-                    </Row>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm, paddingTop: 6, paddingRight: 6 }}>
+                {photos.map((p, i) => (
+                  <View key={p.id} style={styles.thumbBox}>
+                    <Pressable accessibilityRole="imagebutton" accessibilityLabel={t('diary.photoOpen')} onPress={() => setViewing({ uris: photos.map((x) => resolvePhoto(x.uri)), start: i })}>
+                      {/* 목록은 작은 그림으로 빨리, 누르면 원본을 크게 */}
+                      <Image source={{ uri: resolvePhoto(thumbOf(p.uri)) }} style={styles.thumb} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} accessibilityIgnoresInvertColors />
+                      {isVideo(p.uri) && <Text style={styles.play}>▶</Text>}
+                    </Pressable>
+                    <Pressable accessibilityRole="button" accessibilityLabel={p.cover ? t('stop.coverOn') : t('stop.cover')} accessibilityState={{ selected: !!p.cover }} onPress={() => void toggleCover(p)} hitSlop={6} style={[styles.cover, p.cover && styles.coverOn]}>
+                      <Text style={[styles.coverText, p.cover && { color: '#fff' }]}>{p.cover ? t('stop.coverOn') : t('stop.cover')}</Text>
+                    </Pressable>
+                    <Pressable accessibilityRole="button" accessibilityLabel={`${t('stop.photo')} ${t('common.delete')}`} onPress={() => void removePhoto(p)} hitSlop={8} style={styles.remove}>
+                      <Text style={styles.removeText}>✕</Text>
+                    </Pressable>
                   </View>
                 ))}
               </ScrollView>
@@ -333,10 +356,21 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
         />
       </Card>
 
+      {viewing && <PhotoViewer uris={viewing.uris} start={viewing.start} onClose={() => setViewing(null)} />}
     </Screen>
   );
 }
 
+const THUMB = 120;
+
 const styles = StyleSheet.create({
   ask: { borderColor: colors.accent, borderWidth: 2, gap: space.sm },
+  thumbBox: { width: THUMB, height: THUMB },
+  thumb: { width: THUMB, height: THUMB, borderRadius: radius.md, backgroundColor: colors.accentSoft },
+  play: { position: 'absolute', left: 0, right: 0, top: THUMB / 2 - 14, textAlign: 'center', fontSize: 24, color: '#fff' },
+  remove: { position: 'absolute', top: -6, right: -6, width: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.65)', borderWidth: 1.5, borderColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  removeText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  cover: { position: 'absolute', left: space.xs, bottom: space.xs, paddingVertical: 2, paddingHorizontal: space.sm, borderRadius: radius.pill, backgroundColor: 'rgba(255,255,255,0.9)' },
+  coverOn: { backgroundColor: colors.accent },
+  coverText: { fontSize: fonts.size.xs, fontWeight: '700', color: colors.ink },
 });

@@ -38,8 +38,8 @@ export function groupPins(stops: Stop[], meters = 30): Pin[] {
   return pins;
 }
 
-/** 핀 글자: '1', '1·5', 모두 도착했으면 '✓' */
+/** 핀 글자: '1', '1·5' */
 export function pinLabel(pin: Pin): string {
-  if (pin.stops.every((s) => s.stop.arrivedAt)) return '✓';
+  // 도착해도 번호는 그대로 둔다 (지도에서 순서를 읽을 수 있게)
   return pin.stops.map((s) => s.index + 1).join('·');
 }

@@ -83,21 +83,38 @@ test('typing shows matching places; picking one and pressing 추가하기 puts i
   await pickTime('예정 시간', '09:30');
   await fireEvent.changeText(screen.getByPlaceholderText(/할 일 추가/), '부적 사기'); // 완료를 누르지 않아도 적은 글이 들어간다
   await fireEvent.press(screen.getByText('추가하기'));
-  expect(await screen.findByText('✓ 센소지 · 09:30')).toBeTruthy();
+  // 추가하기를 누르면 바로 일정에 넣고 돌아간다 (따로 완료 단계 없음)
+  await waitFor(() => expect(done).toHaveBeenCalledTimes(1));
   expect((await sv.repo.listStops(day.id)).map((s) => [s.name, s.plannedTime, s.planNote, s.kind])).toEqual([['센소지', '09:30', '[ ] 부적 사기', 'sight']]);
 
   await fireEvent.changeText(screen.getByPlaceholderText('장소 이름 또는 구글 지도 링크'), '스카이');
+  // 첫 누름에 바로 장소 카드가 뜬다
   await fireEvent.press(await screen.findByText('스카이트리'));
+  expect(screen.getByTestId('place-card')).toBeTruthy();
   await fireEvent.press(screen.getByText('추가하기'));
   await waitFor(async () => expect(await sv.repo.listStops(day.id)).toHaveLength(2));
-
-  await fireEvent.press(screen.getByText('완료 (2곳 추가함)'));
-  expect(done).toHaveBeenCalled();
   const stops = await sv.repo.listStops(day.id);
   expect(stops.map((s) => s.name)).toEqual(['센소지', '스카이트리']);
   const legs = await sv.repo.listLegs(day.id);
   expect(legs.map((l) => [l.fromStopId, l.toStopId])).toEqual([[stops[0].id, stops[1].id]]);
   expect(queries).toContain('센소');
+});
+
+test('below the empty search box, recently added places can be added again (the same place twice in a day)', async () => {
+  const sv = await makeTestServices();
+  const trip = await sv.repo.createTrip({ name: 't', city: 'c', startDate: '2027-03-01', endDate: '2027-03-01', baseCurrency: 'KRW' });
+  const [day] = await sv.repo.listDays(trip.id);
+  await appendStop(sv, day.id, { placeId: 'p1', name: '센소지', lat: 35.71, lng: 139.79, kind: 'sight' });
+  const done = jest.fn();
+  const opened: string[] = [];
+  await render(withServices(sv, <AddStopScreen dayId={day.id} onDone={done} openUrl={(u) => void opened.push(u)} />));
+  await fireEvent.press(await screen.findByLabelText('최근에 넣은 장소 센소지'));
+  // 카드 안에서 구글로 확인할 수 있다
+  await fireEvent.press(screen.getByText('Google 지도에서 보기 ↗'));
+  expect(opened[0]).toContain('query_place_id=p1');
+  await fireEvent.press(screen.getByText('추가하기'));
+  await waitFor(() => expect(done).toHaveBeenCalled());
+  expect((await sv.repo.listStops(day.id)).map((s) => s.name)).toEqual(['센소지', '센소지']);
 });
 
 test('a place with a planned time goes into the day in time order, and before the hotel at night', async () => {
@@ -190,8 +207,8 @@ test('trip home shows the real distance of each leg by its travel mode', async (
   const meters = [1100, 756];
   sv.routes.compute = async (_from, _to, mode) => ({ id: mode + meters.length, kind: 'default', polyline: [], distanceMeters: meters.shift() ?? 0, durationSeconds: 600 });
   await render(home(sv, trip.id));
-  expect(await screen.findByText('1.1km')).toBeTruthy();
-  expect(screen.getByText('756m')).toBeTruthy();
+  expect(await screen.findByText('1.1km ↗')).toBeTruthy();
+  expect(screen.getByText('756m ↗')).toBeTruthy();
   expect(screen.getAllByText('10분')).toHaveLength(2);
   expect(screen.getAllByRole('radio', { name: '도보', selected: true })).toHaveLength(2);
 });
@@ -200,22 +217,21 @@ test('changing a leg to transit re-measures it with that mode', async () => {
   const { sv, trip } = await dayWithStops(['A', 'B']);
   sv.routes.compute = async (_from, _to, mode) => ({ id: mode, kind: 'default', polyline: [], distanceMeters: mode === 'transit' ? 2400 : 900, durationSeconds: 600 });
   await render(home(sv, trip.id));
-  await screen.findByText('900m');
+  await screen.findByText('900m ↗');
   // 이동 수단은 펼치지 않아도 늘 보이고, 언제든 다시 바꿀 수 있다
   await fireEvent.press(screen.getByRole('radio', { name: '대중교통' }));
-  expect(await screen.findByText('2.4km')).toBeTruthy();
+  expect(await screen.findByText('2.4km ↗')).toBeTruthy();
   await fireEvent.press(screen.getByRole('radio', { name: '도보' }));
-  expect(await screen.findByText('900m')).toBeTruthy();
+  expect(await screen.findByText('900m ↗')).toBeTruthy();
 });
 
-test('tapping a stop selects it, tapping it again opens it', async () => {
-  const { sv, trip } = await dayWithStops(['A', 'B']);
+test('tapping a place card opens that place right away', async () => {
+  const { sv, trip, days } = await dayWithStops(['A', 'B']);
   const open = jest.fn();
   await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={noop} onOpenStop={open} onExpenses={noop} onSettings={noop} />));
   await fireEvent.press(await screen.findByText('B'));
-  expect(open).not.toHaveBeenCalled();
-  await fireEvent.press(screen.getByText('B'));
-  expect(open).toHaveBeenCalledTimes(1);
+  const [, b] = await sv.repo.listStops(days[0].id);
+  expect(open).toHaveBeenCalledWith(b.id);
 });
 
 test('the add button adds a stop to the shown day', async () => {
@@ -279,15 +295,16 @@ test('plan items can be checked off right from the itinerary', async () => {
   expect(await screen.findByRole('checkbox', { name: '우산', checked: true })).toBeTruthy();
 });
 
-test('each leg opens Google Maps: navigation for walking/driving, transit options for transit', async () => {
+test('tapping the distance of a leg opens Google Maps: navigation for walking/driving, transit options for transit', async () => {
   const { sv, trip } = await dayWithStops(['A', 'B']);
   const opened: string[] = [];
   await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={noop} onOpenStop={noop} onExpenses={noop} onSettings={noop} openUrl={(u) => void opened.push(u)} />));
-  await fireEvent.press(await screen.findByText('↗ 구글 지도 길 안내'));
+  expect(screen.queryByText('↗ 구글 지도 길 안내')).toBeNull(); // 따로 길 안내 버튼은 없다
+  await fireEvent.press(await screen.findByLabelText(/구글 지도 길 안내$/));
   expect(opened[0]).toContain('travelmode=walking');
   expect(opened[0]).toContain('dir_action=navigate');
   await fireEvent.press(screen.getByRole('radio', { name: '대중교통' }));
-  await fireEvent.press(await screen.findByText('↗ 구글 지도 대중교통'));
+  await fireEvent.press(await screen.findByLabelText(/구글 지도 대중교통$/));
   expect(opened[1]).toContain('travelmode=transit');
   expect(opened[1]).not.toContain('dir_action');
 });

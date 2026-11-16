@@ -1,4 +1,5 @@
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import type { NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
@@ -61,11 +62,12 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
   const sv = useServices();
   const { repo } = sv;
   const { data: trip } = useLoad(() => repo.getTrip(tripId), [tripId, refreshKey]);
-  const { data: days } = useLoad(() => repo.listDays(tripId), [tripId]);
+  // 설정에서 여행 날짜를 바꾸고 돌아오면 날 목록도 다시 읽는다
+  const { data: days } = useLoad(() => repo.listDays(tripId), [tripId, refreshKey]);
   const { data: expenses } = useLoad(() => repo.listExpenses(tripId), [tripId, refreshKey]);
   const [pickedDay, setDayId] = useState<string>();
   // 고른 날이 없으면 여행 중인 오늘, 아니면 첫날을 연다.
-  const dayId = pickedDay ?? (days?.find((d) => d.date === today) ?? days?.[0])?.id;
+  const dayId = (pickedDay && days?.some((d) => d.id === pickedDay) ? pickedDay : undefined) ?? (days?.find((d) => d.date === today) ?? days?.[0])?.id;
   const [moving, setMoving] = useState<Stop | null>(null);
   const [editing, setEditing] = useState(false);
   const [selection, setSelection] = useState<Selection>(null);
@@ -79,6 +81,7 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
   const bottomSafe = useContext(SafeAreaInsetsContext)?.bottom ?? 0;
   const collapsed = HANDLE + Math.max(bottomSafe, space.md) + space.lg;
   const day = days?.find((d) => d.id === dayId);
+  const past0 = !!day && !!today && day.date < today;
 
   useEffect(() => {
     if (trip) onTrip?.(trip);
@@ -188,6 +191,7 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
   }, [bookings, today, sv.flights, repo]);
 
   const changeDay = (id: string) => {
+    followed.current = null;
     setDayId(id);
     setSelection(null);
     setMoving(null);
@@ -205,10 +209,28 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
     const target = targetOf(s, stops, legs);
     if (target) map.current?.send({ type: 'goToTarget', target });
   };
-  const pressStop = (stop: Stop) => {
-    // 처음 누르면 지도에서 그 장소로 옮기고, 이미 고른 장소를 다시 누르면 자세히 연다.
-    if (selection?.type === 'stop' && selection.id === stop.id) onOpenStop(stop.id);
-    else select({ type: 'stop', id: stop.id });
+  // 목록을 스크롤하면 위 고정 바 바로 아래에 온 장소로 지도를 옮긴다 (확대 정도는 그대로).
+  const sheet = useRef<BottomSheet>(null);
+  const rowHeights = useRef<Record<string, number>>({});
+  const stopHeights = useRef<Record<string, number>>({});
+  const gridTop = useRef(0);
+  const followed = useRef<string | null>(null);
+  const follow = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (editing || !day || (viewOf[day.id] ?? (past0 ? 'diary' : 'plan')) !== 'plan') return;
+    const y = e.nativeEvent.contentOffset.y;
+    let top = gridTop.current;
+    for (const r of rows) {
+      const h = rowHeights.current[r.id] ?? 0;
+      // 장소 카드가 절반 넘게 위로 지나가면 다음 장소로 넘어간다
+      if (r.kind === 'stop' && top + (stopHeights.current[r.id] ?? h) * 0.5 > y) {
+        if (followed.current !== r.id) {
+          followed.current = r.id;
+          select({ type: 'stop', id: r.id });
+        }
+        return;
+      }
+      top += h;
+    }
   };
 
   const onDragEnd = async (data: Item[]) => {
@@ -285,7 +307,6 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
         return (
           <Card style={styles.editCard}>
             <Row>
-              <View style={styles.noteDot} />
               <Txt style={{ flex: 1 }}>{n.text}</Txt>
               <Chip label={t('common.delete')} onPress={() => removeNoteAsk(n)} />
             </Row>
@@ -330,11 +351,13 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
             onDelete={() => removeStopAsk(s)}
             stop={s}
             index={r.index}
-            onLayoutHeight={endMeasure(r)}
+            onLayoutHeight={(h) => {
+              stopHeights.current[s.id] = h;
+              endMeasure(r)?.(h);
+            }}
             selected={selection?.type === 'stop' && selection.id === s.id}
             thumb={<PlaceThumb stop={s} photos={photosOf(s.id)} resolvePhoto={resolvePhoto} />}
             info={booking ? bookingLine(booking, s.name) : ''}
-            onPress={() => pressStop(s)}
             onOpen={() => onOpenStop(s.id)}
             onCheck={(items) => void checkPlan(s, items)}
           />
@@ -363,9 +386,8 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
     );
   };
 
-  const diaryEntries: DiaryEntry[] = rows.map((r) =>
-    r.kind === 'stop' ? { kind: 'stop', stop: r.stop, photos: photosOf(r.stop.id) } : { kind: 'note', note: r.note, photos: photos.filter((p) => p.noteId === r.note.id) },
-  );
+  // 일기에는 장소만 (이동 메모는 숨긴다)
+  const diaryEntries: DiaryEntry[] = rows.flatMap((r) => (r.kind === 'stop' ? [{ kind: 'stop' as const, stop: r.stop, photos: photosOf(r.stop.id) }] : []));
 
   const mapView = (
     <>
@@ -402,7 +424,12 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
         {day && (
           <Chip
             label={view === 'diary' ? t('day.planView') : t('day.diaryView')}
-            onPress={() => setViewOf({ ...viewOf, [day.id]: view === 'diary' ? 'plan' : 'diary' })}
+            onPress={() => {
+              const next = view === 'diary' ? 'plan' : 'diary';
+              setViewOf({ ...viewOf, [day.id]: next });
+              // 일기는 누르면 화면 가득 펼쳐 읽고, 계획으로 돌아오면 지도와 반반
+              sheet.current?.snapToIndex(next === 'diary' ? 2 : 1);
+            }}
           />
         )}
         {view === 'plan' && rows.length > 0 && <Chip label={editing ? t('day.editDone') : t('day.edit')} selected={editing} onPress={() => setEditing(!editing)} />}
@@ -441,19 +468,24 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
           )}
 
           {/* 길게 눌러 끌면 장소와 이동 메모의 순서를 함께 바꾼다. 왼쪽으로 밀면 삭제. */}
-          <View>
+          <View onLayout={(e) => (gridTop.current = e.nativeEvent.layout.y)}>
           {!editing && rows.length > 1 && <View pointerEvents="none" style={[styles.railLine, { top: ends.top, bottom: ends.bottom }]} />}
           <Sortable.Grid
             columns={1}
             rowGap={editing ? space.sm : 0}
             data={rows}
             keyExtractor={(r) => r.id}
-            dragActivationDelay={350}
+            // 스크롤·누름과 헷갈리지 않게 조금 더 길게 눌러야 끌린다
+            dragActivationDelay={600}
             activeItemScale={1.03}
+            // 다른 칸을 반투명하게 하면 카드 뒤의 삭제 버튼이 비쳐 보이므로 그대로 둔다
+            inactiveItemOpacity={1}
             // 끄는 동안 바탕은 비우고 장소 카드와 번호만 떠서 움직인다
             activeItemShadowOpacity={0}
             onDragEnd={({ data }) => void onDragEnd(data)}
-            renderItem={({ item }) => renderRow(item)}
+            renderItem={({ item }) => (
+              <View onLayout={(e) => (rowHeights.current[item.id] = e.nativeEvent.layout.height)}>{renderRow(item)}</View>
+            )}
           />
           </View>
           {rows.length > 1 && <Txt kind="small">{t('day.dragHint')}</Txt>}
@@ -502,7 +534,9 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
         <View style={styles.split} testID="split-layout">
           <View style={[styles.panel, { width: panelWidth }]}>
             {header}
-            <ScrollView contentContainerStyle={styles.sheet}>{panel}</ScrollView>
+            <ScrollView contentContainerStyle={styles.sheet} onScroll={follow} scrollEventThrottle={32}>
+              {panel}
+            </ScrollView>
           </View>
           <View style={{ flex: 1 }}>{mapView}</View>
         </View>
@@ -510,6 +544,7 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
         <>
           <View style={StyleSheet.absoluteFill}>{mapView}</View>
           <BottomSheet
+            ref={sheet}
             snapPoints={[collapsed, Math.round(height * MIDDLE), Math.round(height)]}
             index={1}
             onChange={(i) => i >= 0 && setSheetIndex(i)}
@@ -524,7 +559,10 @@ export function TripHomeScreen({ tripId, onAddStop, onOpenStop, onOpenNote = () 
             handleIndicatorStyle={{ backgroundColor: colors.line, width: 44 }}
           >
             {header}
-            <BottomSheetScrollView contentContainerStyle={styles.sheet}>{panel}</BottomSheetScrollView>
+            {/* 시트가 절반이면 아래 절반은 화면 밖이라, 그만큼 여백을 더해 마지막 장소까지 올려 볼 수 있게 한다 */}
+            <BottomSheetScrollView contentContainerStyle={[styles.sheet, { paddingBottom: 120 + (sheetIndex === 1 ? Math.round(height * (1 - MIDDLE)) : 0) }]} onScroll={follow}>
+              {panel}
+            </BottomSheetScrollView>
           </BottomSheet>
         </>
       )}
@@ -587,18 +625,18 @@ type StopRowProps = {
   index: number;
   selected: boolean;
   thumb: ReactNode;
-  /** 줄 높이를 알려 준다 (고정 연결선의 시작·끝 맞추기) */
+  /** 줄 높이를 알려 준다 (고정 연결선의 시작·끝 맞추기, 스크롤 따라 지도 옮기기) */
   onLayoutHeight?: (h: number) => void;
   /** 예약 정보 한 줄 (편명·게이트·좌석 등) */
   info: string;
-  onPress: () => void;
+  /** 누르면 장소 자세히 */
   onOpen: () => void;
   onCheck: (items: CheckItem[]) => void;
   /** 왼쪽으로 밀어 나온 삭제 버튼 */
   onDelete: () => void;
 };
 
-function StopRow({ stop, index, selected, thumb, info, onPress, onOpen, onCheck, onDelete, onLayoutHeight }: StopRowProps) {
+function StopRow({ stop, index, selected, thumb, info, onOpen, onCheck, onDelete, onLayoutHeight }: StopRowProps) {
   const plan = parseChecklist(stop.planNote);
   // 도착하면 예정 시간 대신 도착 시간을 보여 준다 (예정 시간은 장소 화면의 계획에 남는다).
   const time = stop.arrivedAt ? t('stop.arrivedAt', { time: formatTime(stop.arrivedAt) }) : stop.plannedTime;
@@ -608,38 +646,39 @@ function StopRow({ stop, index, selected, thumb, info, onPress, onOpen, onCheck,
         <Dot index={index} />
       </Rail>
       <View style={{ flex: 1 }}>
-      <SwipeRow label={stop.name} onDelete={onDelete}>
-      <Pressable onPress={onPress} style={({ pressed }) => [styles.stopCard, selected && styles.stopCardOn, pressed && { opacity: 0.8 }]}>
-        {thumb}
-        <View style={{ flex: 1, gap: 2 }}>
-          <Text style={styles.stopName} numberOfLines={2}>
-            {stop.name}
-          </Text>
-          {time ? <Text style={[styles.stopSub, stop.arrivedAt && styles.arrived]}>{time}</Text> : null}
-          {info !== '' && <Text style={styles.info}>{info}</Text>}
-          {plan.length > 0 && (
-            <View style={styles.planNote}>
-              <Checklist items={plan} onChange={onCheck} max={4} compact />
+        <SwipeRow label={stop.name} onDelete={onDelete}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${stop.name} ${t('day.openStop')}`}
+            onPress={onOpen}
+            style={({ pressed }) => [styles.stopCard, selected && styles.stopCardOn, pressed && { opacity: 0.8 }]}
+          >
+            {thumb}
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={styles.stopName} numberOfLines={2}>
+                {stop.name}
+              </Text>
+              {time ? <Text style={[styles.stopSub, stop.arrivedAt && styles.arrived]}>{time}</Text> : null}
+              {info !== '' && <Text style={styles.info}>{info}</Text>}
+              {plan.length > 0 && (
+                <View style={styles.planNote}>
+                  <Checklist items={plan} onChange={onCheck} max={4} compact />
+                </View>
+              )}
             </View>
-          )}
-        </View>
-        <Pressable accessibilityRole="button" accessibilityLabel={`${stop.name} ${t('day.openStop')}`} onPress={onOpen} hitSlop={12} style={styles.chevron}>
-          <Text style={styles.chevronText}>›</Text>
-        </Pressable>
-      </Pressable>
-      </SwipeRow>
+            <Text style={styles.chevronText}>›</Text>
+          </Pressable>
+        </SwipeRow>
       </View>
     </View>
   );
 }
 
-/** 이동 메모 카드. 세로줄 위에 작은 점을 찍어 장소 카드와 구분한다. */
+/** 이동 메모 카드. 세로줄 위에 따로 점을 찍지 않고 카드만 둔다. */
 function NoteRow({ children, onPress, label, name, onDelete, onLayoutHeight }: { children: ReactNode; onPress?: () => void; label?: string; name: string; onDelete: () => void; onLayoutHeight?: (h: number) => void }) {
   return (
     <View style={styles.row} onLayout={onLayoutHeight && ((e) => onLayoutHeight(e.nativeEvent.layout.height))}>
-      <Rail>
-        <View style={styles.noteDot} />
-      </Rail>
+      <Rail />
       <View style={{ flex: 1 }}>
         <SwipeRow label={name} onDelete={onDelete}>
           <Pressable accessibilityLabel={label} disabled={!onPress} onPress={onPress} style={({ pressed }) => [styles.noteCard, pressed && { opacity: 0.8 }]}>
@@ -651,7 +690,10 @@ function NoteRow({ children, onPress, label, name, onDelete, onLayoutHeight }: {
   );
 }
 
-/** 두 장소 사이 구간. 이동 수단은 늘 보이는 토글로 바로 바꾸고, 오른쪽 끝의 큰 버튼으로 이동 메모를 더한다. */
+/**
+ * 두 장소 사이 구간. 왼쪽 줄 위의 거리를 누르면 구글 지도 길 안내가 열린다.
+ * 이동 수단(도보·대중교통·차)은 세로로 쌓고, 그 오른쪽에 이동 메모를 더하는 칸을 둔다.
+ */
 function LegRow({ leg, status, selected, onPress, onMode, onRetry, onAddNote, onDirections }: { leg: Leg; status: LegStatus | undefined; selected: boolean; onPress: () => void; onMode: (m: TravelMode) => void; onRetry: () => void; onAddNote: () => void; onDirections: () => void }) {
   const option = selectedOption(leg);
   const loading = status === 'loading';
@@ -669,47 +711,46 @@ function LegRow({ leg, status, selected, onPress, onMode, onRetry, onAddNote, on
   return (
     <View style={styles.row}>
       <Rail>
-        <Pressable accessibilityRole="button" onPress={onPress} style={[styles.pill, selected && styles.pillOn]}>
-          <Text style={[styles.pillText, selected && { color: colors.card }]}>{distance}</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${distance} ${leg.mode === 'transit' ? t('leg.transitInfo') : t('leg.navigate')}`}
+          onPress={onDirections}
+          hitSlop={8}
+          style={({ pressed }) => [styles.pill, selected && styles.pillOn, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={[styles.pillText, selected && { color: colors.card }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>{`${distance} ↗`}</Text>
         </Pressable>
       </Rail>
       <View style={styles.legBody}>
-        <View style={styles.legLine}>
-          <View style={styles.modes} accessibilityRole="radiogroup">
-            {MODES.map((m) => {
-              const on = leg.mode === m;
-              return (
-                <Pressable
-                  key={m}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: on }}
-                  accessibilityLabel={t(`mode.${m}`)}
-                  onPress={() => !on && onMode(m)}
-                  style={[styles.mode, on && styles.modeOn]}
-                >
-                  <Text style={[styles.modeText, on && styles.modeTextOn]}>{t(`mode.${m}`)}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <Pressable onPress={onPress} hitSlop={6}>
-            <Text style={styles.legText}>{info}</Text>
-          </Pressable>
-          {failed && (
-            <Pressable accessibilityRole="button" onPress={onRetry} hitSlop={6}>
-              <Text style={styles.retry}>{t('common.retry')}</Text>
-            </Pressable>
-          )}
+        <View style={styles.modes} accessibilityRole="radiogroup">
+          {MODES.map((m) => {
+            const on = leg.mode === m;
+            return (
+              <Pressable
+                key={m}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: on }}
+                accessibilityLabel={t(`mode.${m}`)}
+                onPress={() => !on && onMode(m)}
+                style={[styles.mode, on && styles.modeOn]}
+              >
+                <Text style={[styles.modeText, on && styles.modeTextOn]}>{t(`mode.${m}`)}</Text>
+              </Pressable>
+            );
+          })}
         </View>
-        <View style={styles.legLine}>
-          <Pressable accessibilityRole="button" onPress={onDirections} hitSlop={6} style={styles.directions}>
-            <Text style={styles.directionsText}>{leg.mode === 'transit' ? t('leg.transitInfo') : t('leg.navigate')}</Text>
+        <Pressable onPress={onPress} hitSlop={6}>
+          <Text style={styles.legText}>{info}</Text>
+        </Pressable>
+        {failed && (
+          <Pressable accessibilityRole="button" onPress={onRetry} hitSlop={6}>
+            <Text style={styles.retry}>{t('common.retry')}</Text>
           </Pressable>
-        </View>
+        )}
       </View>
-      <Pressable accessibilityRole="button" accessibilityLabel={t('leg.addNote')} onPress={onAddNote} hitSlop={6} style={({ pressed }) => [styles.addNote, pressed && { opacity: 0.7 }]}>
+      <Pressable accessibilityRole="button" accessibilityLabel={t('leg.addNote')} onPress={onAddNote} style={({ pressed }) => [styles.addNote, pressed && { opacity: 0.7 }]}>
         <Text style={styles.addNotePlus}>+</Text>
-        <Text style={styles.addNoteText}>{t('leg.addNoteShort')}</Text>
+        <Text style={styles.addNoteText}>{t('leg.note')}</Text>
       </Pressable>
     </View>
   );
@@ -752,28 +793,23 @@ const styles = StyleSheet.create({
   arrived: { color: colors.ok, fontWeight: '600' },
   info: { fontSize: fonts.size.xs, color: colors.route, fontWeight: '600' },
   planNote: { marginTop: space.xs },
-  chevron: { paddingLeft: space.xs },
   chevronText: { fontSize: fonts.size.lg, color: colors.inkSoft },
-  pill: { paddingVertical: 3, paddingHorizontal: space.sm, borderRadius: radius.pill, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
+  pill: { maxWidth: RAIL - 4, paddingVertical: 3, paddingHorizontal: space.xs + 2, borderRadius: radius.pill, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
   pillOn: { backgroundColor: colors.route, borderColor: colors.route },
   pillText: { fontSize: fonts.size.xs, fontWeight: '600', color: colors.ink },
-  legBody: { flex: 1, paddingVertical: space.sm, gap: space.xs + 2 },
-  legLine: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexShrink: 1 },
-  mode: { paddingVertical: 4, paddingHorizontal: space.sm, borderRadius: radius.pill },
+  legBody: { paddingVertical: space.sm, gap: space.xs + 2, alignItems: 'flex-start' },
+  mode: { paddingVertical: 5, paddingHorizontal: space.md, borderRadius: radius.md },
   modeOn: { backgroundColor: colors.ink },
   modeText: { fontSize: fonts.size.xs, color: colors.inkSoft, fontWeight: '600' },
   modeTextOn: { color: colors.card },
-  directions: { paddingVertical: space.xs, paddingHorizontal: space.sm, borderRadius: radius.pill, backgroundColor: colors.route },
-  directionsText: { fontSize: fonts.size.xs, color: colors.card, fontWeight: '700' },
   retry: { fontSize: fonts.size.xs, color: colors.accent, fontWeight: '700' },
   legText: { fontSize: fonts.size.sm, color: colors.inkSoft },
-  addNote: { alignSelf: 'center', width: 56, height: 56, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.line, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card },
+  addNote: { flex: 1, alignSelf: 'stretch', marginVertical: space.sm, marginLeft: space.md, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.line, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card, gap: 2 },
   addNotePlus: { fontSize: 22, lineHeight: 24, color: colors.ink, fontWeight: '300' },
   addNoteText: { fontSize: 11, color: colors.inkSoft, fontWeight: '600' },
   noteMemo: { fontSize: fonts.size.xs, color: colors.inkSoft, marginLeft: 24 },
-  noteDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.route },
   noteCard: { flexDirection: 'row', alignItems: 'center', marginVertical: space.xs, padding: space.md, borderRadius: radius.lg, backgroundColor: colors.card, gap: space.sm, borderWidth: 1, borderColor: colors.line },
-  modes: { flexDirection: 'row', padding: 2, borderRadius: radius.pill, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
+  modes: { flexDirection: 'column', padding: 2, gap: 2, borderRadius: radius.md + 2, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
   hiddenCard: { padding: space.md, borderStyle: 'dashed' },
   editCard: { padding: space.md },
   fab: {

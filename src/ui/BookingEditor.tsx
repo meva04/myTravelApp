@@ -8,6 +8,7 @@ import { airlineOf } from '@/travel/airlines';
 import { space } from '@/theme/tokens';
 
 import { Chip, Field, Row, Txt } from './kit';
+import { DateRangeField } from './DateRangeField';
 import { DateField, TimeField } from './PickerField';
 import { PlaceSearchField } from './PlaceSearchField';
 import { SeatMap } from './SeatMap';
@@ -28,7 +29,7 @@ export function bookingReady(b: Booking): boolean {
   return !!((b.from && b.departDate) || (b.to && b.arriveDate));
 }
 
-export function BookingEditor({ value: b, onChange, min, max }: Props) {
+export function BookingEditor({ value: b, onChange, min }: Props) {
   const { flights } = useServices();
   const set = (patch: Partial<Booking>) => onChange({ ...b, ...patch });
 
@@ -36,11 +37,25 @@ export function BookingEditor({ value: b, onChange, min, max }: Props) {
     return (
       <View style={{ gap: space.md }}>
         <PlaceSearchField label={t('booking.hotel')} value={b.place} onChange={(place) => set({ place, title: place.name })} />
-        <DateField label={t('booking.checkIn')} value={b.checkIn ?? ''} min={min} max={max} onChange={(checkIn) => set({ checkIn, checkOut: !b.checkOut || b.checkOut < checkIn ? checkIn : b.checkOut })} />
-        <DateField label={t('booking.checkOut')} value={b.checkOut ?? ''} min={b.checkIn ?? min} max={max} onChange={(checkOut) => set({ checkOut })} />
+        {/* 체크인을 누르고 이어서 체크아웃을 누른다. 지난 여행 기록이나 1년 뒤 예약도 고를 수 있다. */}
+        <DateRangeField label={t('booking.stay')} from={b.checkIn} to={b.checkOut} openAt={min} onChange={(checkIn, checkOut) => set({ checkIn, checkOut })} />
         <TimeField label={t('booking.checkInTime')} value={b.checkInTime ?? ''} defaultTime="15:00" onChange={(v) => set({ checkInTime: v || undefined })} />
         <TimeField label={t('booking.checkOutTime')} value={b.checkOutTime ?? ''} defaultTime="11:00" onChange={(v) => set({ checkOutTime: v || undefined })} />
+        <Row>
+          <Field
+            style={{ flex: 1 }}
+            placeholder={t('booking.price')}
+            value={b.price !== undefined ? String(b.price) : ''}
+            onChangeText={(v) => {
+              const n = Number(v.replace(/,/g, ''));
+              set({ price: v.trim() === '' || !Number.isFinite(n) ? undefined : n });
+            }}
+            keyboardType="decimal-pad"
+          />
+          <Field style={{ width: 84 }} placeholder="KRW" value={b.priceCurrency ?? ''} onChangeText={(v) => set({ priceCurrency: v.trim().toUpperCase() || undefined })} autoCapitalize="characters" maxLength={3} />
+        </Row>
         <Field placeholder={t('booking.confirmation')} value={b.confirmation ?? ''} onChangeText={(v) => set({ confirmation: v })} />
+        <Field placeholder={t('booking.memo')} value={b.memo ?? ''} onChangeText={(v) => set({ memo: v })} multiline style={{ minHeight: 72 }} />
       </View>
     );
   }

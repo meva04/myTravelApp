@@ -21,8 +21,9 @@ export async function findDayPhotos(date: string, lng: number): Promise<LibraryP
   const photos = await Promise.all(
     assets.map(async (a): Promise<LibraryPhoto | null> => {
       try {
-        const [uri, location, takenAt] = await Promise.all([a.getUri(), a.getLocation(), a.getCreationTime()]);
-        return { assetId: a.id, uri, takenAt: takenAt ?? from, location: location ? { lat: location.latitude, lng: location.longitude } : null };
+        // 원본 파일은 고른 사진만 나중에 꺼낸다. 목록은 사진첩 썸네일(ph://)로 빨리 보여 준다.
+        const [location, takenAt] = await Promise.all([a.getLocation(), a.getCreationTime()]);
+        return { assetId: a.id, uri: `ph://${a.id}`, takenAt: takenAt ?? from, location: location ? { lat: location.latitude, lng: location.longitude } : null };
       } catch {
         return null; // 읽을 수 없는 사진(아이클라우드에만 있는 등)은 건너뛴다
       }

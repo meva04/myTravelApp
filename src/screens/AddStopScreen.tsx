@@ -1,20 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { Keyboard, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Keyboard, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { serializeChecklist, type CheckItem } from '@/domain/checklist';
 import type { Stop } from '@/domain/types';
 import { GoogleApiError, OfflineError } from '@/google/errors';
 import { isMapsUrl, type PlaceHit } from '@/google/places';
 import { t } from '@/i18n/ko';
+import { googleMapsUrl } from '@/map/directions';
 import { addStops, type NewPlace } from '@/state/itineraryOps';
 import type { Services } from '@/state/services';
-import { useServices } from '@/state/ServicesContext';
+import { useLoad, useServices } from '@/state/ServicesContext';
 import { colors, fonts, radius, space } from '@/theme/tokens';
 import { Checklist, withDraft } from '@/ui/Checklist';
-import { Button, Field, Txt } from '@/ui/kit';
+import { Button, Field, Row, Txt } from '@/ui/kit';
 import { TimeField } from '@/ui/PickerField';
 import { KindIcon } from '@/ui/PlaceVisual';
-import { SheetModal } from '@/ui/SheetModal';
 
 /** 그 날 일정에 방문지들을 넣고 구간을 맞춘다. 시간이 있으면 시간 순서에 맞는 자리에. */
 export async function appendStops(sv: Services, dayId: string, places: { place: NewPlace; extra?: Partial<Stop> }[]): Promise<Stop[]> {
@@ -49,20 +49,25 @@ function useKeyboardHeight(): number {
 const DEBOUNCE_MS = 400;
 const MIN_CHARS = 2;
 
-type Props = { dayId: string; onDone: () => void };
+type Props = { dayId: string; onDone: () => void; openUrl?: (url: string) => void };
 
-export function AddStopScreen({ dayId, onDone }: Props) {
+export function AddStopScreen({ dayId, onDone, openUrl = (url) => void Linking.openURL(url) }: Props) {
   const sv = useServices();
+  // 검색 전에는 최근에 넣은 장소를 보여 준다 (낮·밤 두 번 가는 곳처럼 같은 곳을 다시 넣을 수 있게)
+  const { data: recent } = useLoad(() => sv.repo.listRecentStops(12), [dayId]);
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<PlaceHit[]>([]);
   const [status, setStatus] = useState<Status>('idle');
-  const [added, setAdded] = useState<Stop[]>([]);
   const [editing, setEditing] = useState<Editing | null>(null);
   const [saving, setSaving] = useState(false);
   const seq = useRef(0);
   const keyboard = useKeyboardHeight();
 
-  const open = (hit: PlaceHit) => setEditing({ hit, time: '', todos: [], typing: '' });
+  // 목록을 누르면 키보드를 내리고 아래에 장소 카드를 띄운다 (첫 누름이 키보드 내리기로 사라지지 않게 바로 연다)
+  const open = (hit: PlaceHit) => {
+    Keyboard.dismiss();
+    setEditing({ hit, time: '', todos: [], typing: '' });
+  };
   const search = async (q: string) => {
     const mine = ++seq.current; // 늦게 도착한 옛 검색 결과로 덮어쓰지 않게
     if (q.trim().length < MIN_CHARS) return;
@@ -109,27 +114,27 @@ export function AddStopScreen({ dayId, onDone }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
-  // "추가하기" 를 누르면 바로 일정에 들어간다 (따로 저장하기 단계가 없다).
+  // "추가하기" 를 누르면 바로 일정에 넣고 일정 화면으로 돌아간다 (따로 완료·저장 단계가 없다).
   const add = async () => {
     if (!editing || saving) return;
     setSaving(true);
     try {
       const { hit, time } = editing;
-      const [stop] = await appendStops(sv, dayId, [
+      await appendStops(sv, dayId, [
         {
           place: { placeId: hit.placeId || null, name: hit.name, lat: hit.lat, lng: hit.lng, kind: hit.kind ?? null },
           extra: { plannedTime: time || null, planNote: serializeChecklist(withDraft(editing.todos, editing.typing)) },
         },
       ]);
-      setAdded((a) => [...a, stop]);
       setEditing(null);
+      onDone();
     } finally {
       setSaving(false);
     }
   };
 
   const shownHits = query.trim().length >= MIN_CHARS ? hits : [];
-  const addedIds = new Set(added.map((s) => s.placeId).filter(Boolean));
+  const fromStop = (s: Stop): PlaceHit => ({ placeId: s.placeId ?? '', name: s.name, address: '', lat: s.lat, lng: s.lng, kind: s.kind ?? null });
 
   return (
     <View style={styles.fill}>
@@ -146,11 +151,17 @@ export function AddStopScreen({ dayId, onDone }: Props) {
         {query.trim() === '' && <Txt kind="small">{t('search.linkHint')}</Txt>}
       </View>
       <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-        {added.length > 0 && (
-          <View style={{ gap: space.xs }}>
-            <Txt kind="soft">{t('add.added', { n: added.length })}</Txt>
-            {added.map((s) => (
-              <Text key={s.id} style={styles.addedName}>{`✓ ${s.name}${s.plannedTime ? ` · ${s.plannedTime}` : ''}`}</Text>
+        {query.trim() === '' && (recent?.length ?? 0) > 0 && (
+          <View style={{ gap: 0 }}>
+            <Txt kind="soft">{t('add.recent')}</Txt>
+            {recent!.map((r) => (
+              <Pressable key={r.id} accessibilityRole="button" accessibilityLabel={`${t('add.recent')} ${r.name}`} onPress={() => open(fromStop(r))} style={({ pressed }) => [styles.hit, pressed && { opacity: 0.7 }]}>
+                <KindIcon kind={r.kind} size={16} color={colors.inkSoft} />
+                <Text style={[styles.name, { flex: 1 }]} numberOfLines={1}>
+                  {r.name}
+                </Text>
+                <Text style={styles.plus}>+</Text>
+              </Pressable>
             ))}
           </View>
         )}
@@ -171,9 +182,7 @@ export function AddStopScreen({ dayId, onDone }: Props) {
                 {h.address}
               </Text>
             </View>
-            {addedIds.has(h.placeId) ? (
-              <Text style={styles.badge}>{t('add.inList')}</Text>
-            ) : h.category ? (
+            {h.category ? (
               <Text style={styles.category} numberOfLines={1}>
                 {h.category}
               </Text>
@@ -182,28 +191,40 @@ export function AddStopScreen({ dayId, onDone }: Props) {
         ))}
       </ScrollView>
 
-      {added.length > 0 && !editing && (
-        <View style={[styles.footer, keyboard > 0 && { bottom: keyboard + space.sm }]}>
-          <Button label={t('add.done', { n: added.length })} onPress={onDone} />
-        </View>
-      )}
-
       {editing && (
-        <SheetModal
-          title={editing.hit.name}
-          subtitle={editing.hit.address}
-          onClose={() => setEditing(null)}
-          footer={<Button label={t('add.add')} onPress={() => void add()} />}
-        >
-          <TimeField label={t('stop.plannedTime')} value={editing.time} onChange={(time) => setEditing({ ...editing, time })} />
-          <Checklist
-            items={editing.todos}
-            onChange={(todos) => setEditing((e) => e && { ...e, todos })}
-            onDraft={(typing) => setEditing((e) => e && { ...e, typing })}
-            editable
-            placeholder={t('stop.planNote')}
-          />
-        </SheetModal>
+        // 장소 카드: 구글에서 확인하고, 시간·할 일을 적고 바로 추가한다
+        <View style={[styles.cardWrap, keyboard > 0 && { bottom: keyboard }]}>
+          <View style={styles.card} testID="place-card">
+            <Row style={{ alignItems: 'flex-start' }}>
+              <KindIcon kind={editing.hit.kind} size={18} color={colors.ink} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.cardName}>{editing.hit.name}</Text>
+                {editing.hit.address ? <Text style={styles.sub}>{editing.hit.address}</Text> : null}
+              </View>
+              <Pressable accessibilityRole="button" accessibilityLabel={t('common.close')} onPress={() => setEditing(null)} hitSlop={10}>
+                <Text style={styles.close}>✕</Text>
+              </Pressable>
+            </Row>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => openUrl(googleMapsUrl({ name: editing.hit.name, lat: editing.hit.lat, lng: editing.hit.lng, placeId: editing.hit.placeId || null }))}
+              style={({ pressed }) => [styles.google, pressed && { opacity: 0.7 }]}
+            >
+              <Text style={styles.googleText}>{t('hero.openGoogle')}</Text>
+            </Pressable>
+            <ScrollView style={{ maxHeight: 220 }} contentContainerStyle={{ gap: space.sm }} keyboardShouldPersistTaps="handled">
+              <TimeField label={t('stop.plannedTime')} value={editing.time} onChange={(time) => setEditing((e) => e && { ...e, time })} />
+              <Checklist
+                items={editing.todos}
+                onChange={(todos) => setEditing((e) => e && { ...e, todos })}
+                onDraft={(typing) => setEditing((e) => e && { ...e, typing })}
+                editable
+                placeholder={t('stop.planNote')}
+              />
+            </ScrollView>
+            <Button label={t('add.add')} onPress={() => void add()} />
+          </View>
+        </View>
       )}
     </View>
   );
@@ -216,8 +237,25 @@ const styles = StyleSheet.create({
   hit: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.line },
   name: { fontSize: fonts.size.md, fontWeight: '600', color: colors.ink },
   sub: { fontSize: fonts.size.sm, color: colors.inkSoft, marginTop: 2 },
-  badge: { fontSize: fonts.size.xs, color: colors.ok, fontWeight: '700' },
   category: { maxWidth: 110, fontSize: fonts.size.xs, color: colors.inkSoft, paddingVertical: 2, paddingHorizontal: space.sm, borderRadius: radius.pill, backgroundColor: colors.accentSoft, overflow: 'hidden' },
-  addedName: { fontSize: fonts.size.sm, color: colors.ok, fontWeight: '600' },
-  footer: { position: 'absolute', left: space.lg, right: space.lg, bottom: space.xxl, borderRadius: radius.md },
+  plus: { fontSize: fonts.size.lg, color: colors.inkSoft, paddingHorizontal: space.sm },
+  cardWrap: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  card: {
+    margin: space.md,
+    marginBottom: space.xl,
+    padding: space.lg,
+    gap: space.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.line,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  cardName: { fontSize: fonts.size.lg, fontWeight: '700', color: colors.ink },
+  close: { fontSize: fonts.size.md, color: colors.inkSoft },
+  google: { alignSelf: 'flex-start', paddingVertical: space.xs + 2, paddingHorizontal: space.md, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line },
+  googleText: { fontSize: fonts.size.xs, fontWeight: '700', color: colors.ink },
 });

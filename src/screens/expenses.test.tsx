@@ -97,7 +97,7 @@ test('a rate can be added for a new currency', async () => {
   await render(withServices(sv, <SettingsScreen tripId={trip.id} getAccess={async () => 'always'} requestAlways={async () => 'always'} openSystemSettings={noop} {...notif} />));
   await fireEvent.changeText(await screen.findByPlaceholderText('통화 추가 (예: JPY)'), 'eur');
   await fireEvent.changeText(screen.getByPlaceholderText('1 EUR = ? KRW'), '1500');
-  await fireEvent.press(screen.getByText('저장'));
+  await fireEvent.press(screen.getAllByText('저장')[1]); // 첫 저장은 여행 정보 카드
   expect((await sv.repo.getTrip(trip.id))?.rates).toEqual({ JPY: 9, EUR: 1500 });
 });
 
@@ -170,4 +170,19 @@ test('a country or city name, typed in, picks the local currency', async () => {
   await fireEvent.changeText(await screen.findByPlaceholderText('나라·도시 이름 (예: 도쿄, 영국)'), '베트남 다낭');
   await fireEvent.press(screen.getByText('VND로 정하기'));
   await waitFor(async () => expect((await sv.repo.getTrip(trip.id))?.localCurrency).toBe('VND'));
+});
+
+test('the trip name, cities and dates set at the start can be changed later', async () => {
+  const { sv, trip } = await setup();
+  await render(withServices(sv, <SettingsScreen tripId={trip.id} getAccess={async () => 'always'} requestAlways={async () => 'always'} openSystemSettings={noop} {...notif} />));
+  await fireEvent.changeText(await screen.findByPlaceholderText('도시 (여러 곳이면 하나씩 추가)'), '오사카');
+  await fireEvent.press(screen.getByText('+ 도시'));
+  await pickDate('시작일', '2027-04-10');
+  await fireEvent.press(screen.getAllByText('저장')[0]);
+  await screen.findByText('저장했어요');
+  const t = await sv.repo.getTrip(trip.id);
+  expect(t?.city).toContain('오사카');
+  expect(t?.startDate).toBe('2027-04-10');
+  // 길이는 그대로 두고 함께 옮긴다
+  expect((await sv.repo.listDays(trip.id))[0].date).toBe('2027-04-10');
 });
