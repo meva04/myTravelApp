@@ -19,7 +19,8 @@ jest.mock('react-native-sortables', () => {
       null,
       data.map((item, index) => React.createElement(View, { key: keyExtractor ? keyExtractor(item) : index }, renderItem({ item, index }))),
     );
-  return { __esModule: true, default: { Grid } };
+  const useItemContext = () => ({ isActive: { value: false }, activationAnimationProgress: { value: 0 } });
+  return { __esModule: true, default: { Grid }, useItemContext };
 });
 // 지도와 바텀시트는 네이티브 화면이라 테스트에서는 내용만 그대로 보여 준다.
 jest.mock('react-native-maps', () => {
