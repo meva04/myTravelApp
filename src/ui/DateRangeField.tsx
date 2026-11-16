@@ -1,4 +1,5 @@
-// 기간 입력 (숙소 체크인~체크아웃). 달력 하나에서 첫 날과 마지막 날을 차례로 누른다.
+// 기간 입력 (숙소 체크인~체크아웃). 입력칸은 둘이지만 어느 칸을 눌러도 같은 달력이 열려
+// 첫 날과 마지막 날을 차례로 누른다.
 // 지난 날(기록)이든 1년 뒤(예약)든 제한 없이 고를 수 있고, 달·연도를 앞뒤로 넘길 수 있다.
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -36,7 +37,11 @@ export function tapRange(range: { from?: string; to?: string }, day: string): { 
 }
 
 type Props = {
+  /** 달력 창 제목 */
   label: string;
+  /** 입력칸 두 개의 이름 (예: 체크인 / 체크아웃). 어느 칸을 눌러도 같은 달력이 열린다. */
+  startLabel: string;
+  endLabel: string;
   from?: string;
   to?: string;
   /** 처음 열 달 (값이 없을 때). 'YYYY-MM-DD' */
@@ -44,14 +49,15 @@ type Props = {
   onChange: (from: string, to: string) => void;
 };
 
-export function DateRangeField({ label, from, to, openAt, onChange }: Props) {
+export function DateRangeField({ label, startLabel, endLabel, from, to, openAt, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<{ from?: string; to?: string }>({ from, to });
   const start = from ?? openAt ?? new Date().toISOString().slice(0, 10);
   const [view, setView] = useState({ y: Number(start.slice(0, 4)), m: Number(start.slice(5, 7)) - 1 });
-  const show = () => {
+  /** which: 누른 칸. 체크아웃 칸을 눌렀으면 체크아웃이 있는 달부터 보여 준다. */
+  const show = (which: 'start' | 'end') => {
     setDraft({ from, to });
-    const s = from ?? openAt ?? new Date().toISOString().slice(0, 10);
+    const s = (which === 'end' ? to ?? from : from) ?? openAt ?? new Date().toISOString().slice(0, 10);
     setView({ y: Number(s.slice(0, 4)), m: Number(s.slice(5, 7)) - 1 });
     setOpen(true);
   };
@@ -60,16 +66,20 @@ export function DateRangeField({ label, from, to, openAt, onChange }: Props) {
       const d = new Date(v.y, v.m + months, 1);
       return { y: d.getFullYear(), m: d.getMonth() };
     });
-  const text = from && to ? `${from.replaceAll('-', '. ')} → ${to.slice(5).replace('-', '. ')} · ${t('range.nights', { n: nightsBetween(from, to) })}` : t('picker.choose');
   const ready = !!draft.from && !!draft.to;
+  const nights = from && to ? t('range.nights', { n: nightsBetween(from, to) }) : '';
+  const field = (which: 'start' | 'end', name: string, value?: string, extra?: string) => (
+    <Pressable accessibilityRole="button" accessibilityLabel={name} onPress={() => show(which)} style={({ pressed }) => [styles.field, pressed && { opacity: 0.7 }]}>
+      <Text style={styles.label}>{name}</Text>
+      <Text style={[styles.value, !value && styles.empty]} numberOfLines={1}>
+        {value ? `${value.replaceAll('-', '. ')}${extra ? ` · ${extra}` : ''}` : t('picker.choose')}
+      </Text>
+    </Pressable>
+  );
   return (
     <>
-      <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={show} style={({ pressed }) => [styles.field, pressed && { opacity: 0.7 }]}>
-        <Text style={styles.label}>{label}</Text>
-        <Text style={[styles.value, !(from && to) && styles.empty]} numberOfLines={1}>
-          {text}
-        </Text>
-      </Pressable>
+      {field('start', startLabel, from)}
+      {field('end', endLabel, to, nights)}
       {open && (
         <SheetModal
           title={label}

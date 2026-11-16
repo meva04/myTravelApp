@@ -38,7 +38,7 @@ export function BookingEditor({ value: b, onChange, min }: Props) {
       <View style={{ gap: space.md }}>
         <PlaceSearchField label={t('booking.hotel')} value={b.place} onChange={(place) => set({ place, title: place.name })} />
         {/* 체크인을 누르고 이어서 체크아웃을 누른다. 지난 여행 기록이나 1년 뒤 예약도 고를 수 있다. */}
-        <DateRangeField label={t('booking.stay')} from={b.checkIn} to={b.checkOut} openAt={min} onChange={(checkIn, checkOut) => set({ checkIn, checkOut })} />
+        <DateRangeField label={t('booking.stay')} startLabel={t('booking.checkIn')} endLabel={t('booking.checkOut')}from={b.checkIn} to={b.checkOut} openAt={min} onChange={(checkIn, checkOut) => set({ checkIn, checkOut })} />
         <TimeField label={t('booking.checkInTime')} value={b.checkInTime ?? ''} defaultTime="15:00" onChange={(v) => set({ checkInTime: v || undefined })} />
         <TimeField label={t('booking.checkOutTime')} value={b.checkOutTime ?? ''} defaultTime="11:00" onChange={(v) => set({ checkOutTime: v || undefined })} />
         <Row>
