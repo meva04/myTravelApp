@@ -108,3 +108,74 @@ npx expo start --dev-client
 - [ ] 장소 번호 표시를 눌러도 지도가 움직이지 않고 선택만 된다
 - [ ] 사진첩에서 고른 사진과 촬영한 사진이 장소에 붙는다
 - [ ] 비행기 모드에서도 저장된 일정·경로·기록이 보인다
+
+## 5. 맥에서 겪은 문제와 해결법
+
+- `pod` 명령이 없다 → `brew install cocoapods`
+- pod install 에서 `Unicode Normalization not appropriate for ASCII-8BIT` → 명령 앞에 `LANG=en_US.UTF-8` 을 붙인다.
+- pod install 에서 SSL `certificate verify failed` → 명령 앞에 `SSL_CERT_FILE=/opt/homebrew/share/ca-certificates/cacert.pem` 을 붙인다. (이 오류가 날 때만)
+- 첫 빌드에서 `Scanning for @ExpoModule classes didn't complete ... timed out` → 같은 명령으로 한 번 더 빌드하면 통과한다.
+- 시뮬레이터 앱이 `Could not connect to the server` 로 개발 서버에 못 붙는다 → `REACT_NATIVE_PACKAGER_HOSTNAME=localhost` 를 붙여 빌드한다.
+
+시뮬레이터 빌드는 보통 이렇게 한다.
+
+```bash
+LANG=en_US.UTF-8 REACT_NATIVE_PACKAGER_HOSTNAME=localhost npx expo run:ios
+```
+
+## 6. 코드를 받아온 뒤 다시 빌드해야 하는지
+
+`src/` 만 바뀌었으면 빌드할 필요 없다. 개발 서버만 켜면 시뮬레이터 앱에 바로 반영된다.
+
+```bash
+npx expo start --dev-client --localhost
+```
+
+아래 명령에서 파일 이름이 나오면 다시 빌드해야 한다. 번들 ID·플러그인이 바뀌었으면 `npx expo prebuild --clean -p ios` 부터 한다.
+
+```bash
+git diff --name-only HEAD@{1} HEAD | grep -E 'package.json|app.json|app.config.js'
+```
+
+## 7. 여러 맥에서 아이폰 릴리즈 빌드
+
+릴리즈 빌드는 개발 서버 없이 아이폰에서 혼자 돌아간다. 어느 맥에서 빌드해도 같은 인증서·팀으로 서명되므로 같은 앱으로 덮어 설치되고 데이터도 남는다.
+
+### 맥마다 한 번만
+
+1. **인증서**: `.p12` 파일을 더블클릭하고 로그인 키체인에 비밀번호를 넣어 설치한다. `.p12` 는 저장소에 절대 넣지 않는다.
+2. **애플 중간 인증서**: 아래 명령에서 `0 valid identities` 가 나오면 https://www.apple.com/certificateauthority/ 에서 "Worldwide Developer Relations - G3" 를 받아 더블클릭한다.
+
+```bash
+security find-identity -v -p codesigning
+```
+
+3. **Xcode 계정**: Xcode → 설정 → Accounts 에 애플 계정으로 로그인하고 팀 `NFJTNBHS3J` 가 보이는지 확인한다. 안 보이면 로그아웃 후 다시 로그인한다.
+4. **아이폰 페어링**: 케이블로 연결해 아이폰에서 "신뢰"를 누른 뒤 아래를 실행하고 아이폰에서 허용한다. UDID 는 `xcrun devicectl list devices` 로 본다.
+
+```bash
+xcrun devicectl manage pair --device <아이폰-UDID>
+```
+
+### 빌드할 때마다
+
+`npx expo run:ios --configuration Release --device` 는 프로비저닝 프로필을 자동으로 받지 못해 실패한다. `xcodebuild` 로 직접 빌드한다.
+
+```bash
+cd ios && pod install && LANG=en_US.UTF-8 xcodebuild -workspace tripnote.xcworkspace -scheme tripnote -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build -allowProvisioningUpdates build
+```
+
+```bash
+xcrun devicectl device install app --device <아이폰-UDID> build/Build/Products/Release-iphoneos/tripnote.app
+```
+
+- 무료 팀이라 설치한 앱은 **7일 뒤 만료**된다. 만료 전에 다시 빌드해 설치하면 데이터는 그대로 남는다.
+- 설치하는 동안 아이폰 잠금을 풀어 둔다.
+
+### 아이폰 앱 데이터를 맥으로 가져오기 (개발용 서명 앱만 가능)
+
+```bash
+xcrun devicectl device copy from --device <아이폰-UDID> --domain-type appDataContainer --domain-identifier com.raytripnote.app --source Documents --destination ~/Developer/myTravelApp-iphone-backup/$(date +%F)/Documents
+```
+
+여행 데이터는 `Documents/SQLite/tripnote.db`, 사진은 `Documents/photos/` 에 있다.
