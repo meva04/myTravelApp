@@ -1,7 +1,8 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { t } from '@/i18n/ko';
 import { colors, fonts, radius, space } from '@/theme/tokens';
+import { Text } from '@/ui/Text';
 import { Button } from '@/ui/kit';
 
 /** 선택한 곳이 화면 밖에 있을 때: 방향 화살표와 "여기로 이동". 누르기 전에는 지도가 움직이지 않는다. */

@@ -1,10 +1,11 @@
 // 왼쪽으로 밀면 오른쪽 끝에 삭제 버튼이 나오는 줄.
 import { useRef, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 import ReanimatedSwipeable, { type SwipeableMethods } from 'react-native-gesture-handler/ReanimatedSwipeable';
 
 import { t } from '@/i18n/ko';
 import { colors, fonts, radius, space } from '@/theme/tokens';
+import { Text } from '@/ui/Text';
 
 export function SwipeRow({ children, onDelete, label, enabled = true }: { children: ReactNode; onDelete: () => void; label: string; enabled?: boolean }) {
   const ref = useRef<SwipeableMethods>(null);

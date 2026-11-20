@@ -56,11 +56,11 @@ export type NewPlace = { placeId: string | null; name: string; lat: number; lng:
 export async function addStops(
   sv: Sv,
   dayId: Id,
-  places: { place: NewPlace; extra?: Partial<Stop>; position?: Placement }[],
+  places: { place: NewPlace; extra?: Partial<Stop>; position?: Placement; afterStopId?: Id }[],
   notify = true,
 ): Promise<Stop[]> {
   const added: Stop[] = [];
-  for (const { place, extra, position } of places) {
+  for (const { place, extra, position, afterStopId } of places) {
     const stops = await sv.repo.listStops(dayId);
     const seq = await sv.repo.listSequence(dayId);
     const stop: Stop = {
@@ -70,7 +70,12 @@ export async function addStops(
     const byId = new Map(stops.map((s) => [s.id, s]));
     const stopAt = seq.map((x) => (x.kind === 'stop' ? byId.get(x.id) : undefined));
     let at = -1;
-    if (position === 'start') at = 0;
+    // 두 장소 사이의 + 로 넣으면 앞 장소와 그 뒤 이동 메모들 바로 다음 자리
+    const after = afterStopId ? seq.findIndex((x) => x.kind === 'stop' && x.id === afterStopId) : -1;
+    if (after >= 0) {
+      at = after + 1;
+      while (at < seq.length && seq[at].kind === 'note') at++;
+    } else if (position === 'start') at = 0;
     else if (position !== 'end' && stop.plannedTime) at = timeSlot(stopAt.map((s) => s?.plannedTime ?? null), stop.plannedTime);
     if (at < 0 && position !== 'end') {
       // 그날 끝에 이어진 숙소(밤에 돌아갈 곳) 앞

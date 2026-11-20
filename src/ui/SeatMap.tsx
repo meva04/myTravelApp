@@ -1,10 +1,11 @@
 // 교통편 그림: 비행기·기차·버스·배의 모양과 내 좌석 위치.
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { aircraftLayout, busLayout, parseSeat, seatSide, trainLayout, type Layout } from '@/domain/seats';
 import type { Booking } from '@/domain/types';
 import { t } from '@/i18n/ko';
 import { colors, fonts, radius, space } from '@/theme/tokens';
+import { Text } from '@/ui/Text';
 
 const SIDE = { window: '창가', aisle: '복도', middle: '가운데' } as const;
 

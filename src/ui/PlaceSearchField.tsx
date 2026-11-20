@@ -1,11 +1,12 @@
 // 장소 하나를 고르는 입력칸: 적는 대로 구글에서 찾아 아래에 보여 주고, 누르면 고른다.
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import type { BookingPlace } from '@/domain/types';
 import { t } from '@/i18n/ko';
 import { useServices } from '@/state/ServicesContext';
 import { colors, fonts, radius, space } from '@/theme/tokens';
+import { Text } from '@/ui/Text';
 
 import { Field } from './kit';
 

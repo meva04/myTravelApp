@@ -1,12 +1,13 @@
 import { Image } from 'expo-image';
 import { useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 
 import type { Photo } from '@/domain/types';
 import { t } from '@/i18n/ko';
 import { nearbyPhotos, type LibraryPhoto } from '@/records/nearby';
 import { useLoad, useServices } from '@/state/ServicesContext';
 import { colors, fonts, radius, space } from '@/theme/tokens';
+import { Text } from '@/ui/Text';
 import { Button, Chip, Row, Txt } from '@/ui/kit';
 
 type Props = {

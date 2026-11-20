@@ -1,8 +1,13 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 
 import { AddStopScreen } from '@/screens/AddStopScreen';
 
 export default function AddStop() {
-  const { dayId } = useLocalSearchParams<{ dayId: string }>();
-  return <AddStopScreen dayId={dayId} onDone={() => router.back()} />;
+  const { dayId, after } = useLocalSearchParams<{ dayId: string; after?: string }>();
+  return (
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <AddStopScreen dayId={dayId} afterStopId={after} onDone={() => router.back()} />
+    </>
+  );
 }

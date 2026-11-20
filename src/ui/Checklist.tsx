@@ -1,10 +1,11 @@
 // 체크리스트 부품. editable 이면 항목을 고치고 지우고 더할 수 있고, 아니면 체크만 할 수 있다.
 import { useRef, useState, type ComponentRef } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { toggleItem, type CheckItem } from '@/domain/checklist';
 import { t } from '@/i18n/ko';
 import { colors, fonts, radius, space } from '@/theme/tokens';
+import { Text, TextInput } from '@/ui/Text';
 
 type Props = {
   items: CheckItem[];

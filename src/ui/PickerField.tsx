@@ -2,10 +2,11 @@
 import { DatePicker, Host } from '@expo/ui/swift-ui';
 import { datePickerStyle, labelsHidden } from '@expo/ui/swift-ui/modifiers';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
 
 import { t } from '@/i18n/ko';
 import { colors, fonts, radius, space } from '@/theme/tokens';
+import { Text } from '@/ui/Text';
 
 import { Button, Row } from './kit';
 import { SheetModal } from './SheetModal';

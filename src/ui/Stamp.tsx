@@ -1,8 +1,9 @@
 import { useEffect } from 'react';
-import { StyleSheet, Text } from 'react-native';
+import { StyleSheet } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { colors, fonts } from '@/theme/tokens';
+import { Text } from '@/ui/Text';
 
 import { formatTime } from './format';
 

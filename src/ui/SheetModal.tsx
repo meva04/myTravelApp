@@ -1,9 +1,10 @@
 // 아래에서 올라오는 입력 창. 키보드가 올라와도 가리지 않도록 키보드 바로 위에 붙는다.
 import type { ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { t } from '@/i18n/ko';
 import { colors, fonts, radius, space } from '@/theme/tokens';
+import { Text } from '@/ui/Text';
 
 export function SheetModal({ title, subtitle, children, footer, onClose }: { title: string; subtitle?: string; children: ReactNode; footer: ReactNode; onClose: () => void }) {
   return (

@@ -2,10 +2,11 @@
 // 첫 날과 마지막 날을 차례로 누른다.
 // 지난 날(기록)이든 1년 뒤(예약)든 제한 없이 고를 수 있고, 달·연도를 앞뒤로 넘길 수 있다.
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { t } from '@/i18n/ko';
 import { colors, fonts, radius, space } from '@/theme/tokens';
+import { Text } from '@/ui/Text';
 
 import { Button, Row } from './kit';
 import { SheetModal } from './SheetModal';

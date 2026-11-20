@@ -2,12 +2,13 @@
 import { Image } from 'expo-image';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useState } from 'react';
-import { FlatList, Modal, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { FlatList, Modal, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { isVideo } from '@/domain/media';
 import { t } from '@/i18n/ko';
 import { fonts, space } from '@/theme/tokens';
+import { Text } from '@/ui/Text';
 
 type Props = {
   /** 보여 줄 사진·동영상 주소들 (넘기는 순서) */

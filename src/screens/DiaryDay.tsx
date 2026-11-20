@@ -1,7 +1,7 @@
 // 일기 모드: 지나간 날을 장소별 사진과 기록 중심으로 보여 준다.
 import { Image } from 'expo-image';
 import { useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { currencyChoices } from '@/domain/currency';
 import { summarizeExpenses } from '@/domain/expenses';
@@ -9,6 +9,7 @@ import { isVideo, thumbOf } from '@/domain/media';
 import type { Expense, Note, Photo, Stop, Trip } from '@/domain/types';
 import { t } from '@/i18n/ko';
 import { colors, fonts, radius, space } from '@/theme/tokens';
+import { Text } from '@/ui/Text';
 import { formatMoney, formatTime } from '@/ui/format';
 import { moneyIn, ShowInChips } from '@/ui/Money';
 import { PhotoViewer } from '@/ui/PhotoViewer';

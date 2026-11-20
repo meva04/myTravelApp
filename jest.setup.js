@@ -8,6 +8,8 @@ jest.mock('react-native-reanimated', () => {
     useSharedValue: (value) => ({ value }),
     useAnimatedStyle: (fn) => fn(),
     withSpring: (value) => value,
+    interpolate: (_v, _input, output) => output[0],
+    Extrapolation: { CLAMP: 'clamp' },
   };
 });
 jest.mock('react-native-sortables', () => {

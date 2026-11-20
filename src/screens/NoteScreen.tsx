@@ -1,6 +1,6 @@
 // 이동 메모 화면. 장소 화면과 같은 구성이되 구글 장소 정보만 없다: 할 일, 기록, 사진, 비용.
 import { useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { peopleOf, summarizeExpenses } from '@/domain/expenses';
 import type { Photo } from '@/domain/types';
@@ -11,6 +11,7 @@ import { ExpenseForm } from '@/ui/ExpenseForm';
 import { currencyChoices, defaultCurrencyOf } from '@/domain/currency';
 import { localToday } from '@/location/clock';
 import { addExpense } from '@/state/expenseOps';
+import { Text, TextInput } from '@/ui/Text';
 import { formatAmounts, formatMoney } from '@/ui/format';
 import { Button, Card, Chip, Field, Row, Screen, Txt } from '@/ui/kit';
 

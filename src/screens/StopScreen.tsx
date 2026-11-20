@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Image } from 'expo-image';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { peopleOf, summarizeExpenses } from '@/domain/expenses';
 import { parseChecklist, serializeChecklist, type CheckItem } from '@/domain/checklist';
@@ -18,6 +18,7 @@ import { ExpenseForm } from '@/ui/ExpenseForm';
 import { currencyChoices, defaultCurrencyOf } from '@/domain/currency';
 import { localToday } from '@/location/clock';
 import { addExpense } from '@/state/expenseOps';
+import { Text } from '@/ui/Text';
 import { formatAmounts, formatMoney, formatTime } from '@/ui/format';
 import { Button, Card, Chip, Field, Row, Screen, Txt } from '@/ui/kit';
 import { Checklist } from '@/ui/Checklist';

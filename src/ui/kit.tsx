@@ -1,8 +1,9 @@
 // 기본 부품. 색·간격은 모두 tokens 에서 가져온다.
 import type { ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native';
 
 import { colors, fonts, radius, space } from '@/theme/tokens';
+import { Text, TextInput } from '@/ui/Text';
 
 export function Screen({ children, scroll = true }: { children: ReactNode; scroll?: boolean }) {
   if (!scroll) return <View style={styles.screen}>{children}</View>;

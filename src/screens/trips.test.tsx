@@ -6,7 +6,8 @@ import { setSkipped } from '@/state/itineraryOps';
 import { pickDate, pickTime } from '@/testing/pickers';
 import { makeTestServices, withServices } from '@/testing/services';
 
-import { AddStopScreen, appendStop } from './AddStopScreen';
+import { AddNoteScreen } from './AddNoteScreen';
+import { AddStopScreen, appendStop, appendStops } from './AddStopScreen';
 import { NewTripScreen } from './NewTripScreen';
 import { TripHomeScreen } from './TripHomeScreen';
 import { TripListScreen } from './TripListScreen';
@@ -139,7 +140,8 @@ test('pasting a Google Maps link finds that place and opens the add form; result
   await fireEvent.changeText(screen.getByPlaceholderText('장소 이름 또는 구글 지도 링크'), '콜로');
   expect(await screen.findByText('문화적 랜드마크')).toBeTruthy();
   await fireEvent.changeText(screen.getByPlaceholderText('장소 이름 또는 구글 지도 링크'), link);
-  await fireEvent.press(await screen.findByText('추가하기'));
+  await screen.findByTestId('place-card');
+  await fireEvent.press(screen.getByText('추가하기'));
   await waitFor(async () => expect((await sv.repo.listStops(day.id)).map((s) => [s.name, s.placeId, s.kind])).toEqual([['Trattoria da Enzo', 'p7', 'food']]));
 });
 
@@ -265,22 +267,25 @@ test('hidden places leave the itinerary and its legs, and can be put back', asyn
 
 test('travel notes are separate cards between two places; each can be checked off and opened', async () => {
   const { sv, trip, days } = await dayWithStops(['A', 'B', 'C']);
-  const open = jest.fn();
-  await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={noop} onOpenStop={noop} onOpenNote={open} onExpenses={noop} onSettings={noop} />));
-  const adds = await screen.findAllByLabelText('+ 메모');
-  expect(adds).toHaveLength(2); // A→B, B→C 사이마다 하나
-  await fireEvent.press(adds[0]);
+  const [a] = await sv.repo.listStops(days[0].id);
+  // 메모 추가 페이지에서 두 줄을 적으면 메모 카드 두 개가 된다
+  const done = jest.fn();
+  await render(withServices(sv, <AddNoteScreen dayId={days[0].id} afterStopId={a.id} onDone={done} />));
+  expect(screen.getByText('메모 추가')).toBeTruthy();
   await fireEvent.changeText(screen.getByPlaceholderText(/가는 길에 할 일/), '교통카드 구입');
   await fireEvent(screen.getByPlaceholderText(/가는 길에 할 일/), 'submitEditing');
   await fireEvent.changeText(screen.getByPlaceholderText(/가는 길에 할 일/), '현금 2,000엔');
   await fireEvent.press(screen.getByText('추가하기'));
-  expect(await screen.findByText('교통카드 구입')).toBeTruthy();
-  expect(screen.getAllByLabelText(/^이동 메모 /)).toHaveLength(2); // 하나하나가 각각의 카드
-  const [a] = await sv.repo.listStops(days[0].id);
+  await waitFor(() => expect(done).toHaveBeenCalled());
   const notes = await sv.repo.listNotesForDay(days[0].id);
   expect(notes.map((n) => [n.text, n.done])).toEqual([['교통카드 구입', false], ['현금 2,000엔', false]]);
   // 일정에서 A 바로 뒤에 놓인다
   expect((await sv.repo.listSequence(days[0].id)).slice(0, 3).map((x) => x.id)).toEqual([a.id, notes[0].id, notes[1].id]);
+
+  const open = jest.fn();
+  await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={noop} onOpenStop={noop} onOpenNote={open} onExpenses={noop} onSettings={noop} />));
+  expect(await screen.findByText('교통카드 구입')).toBeTruthy();
+  expect(screen.getAllByLabelText(/^이동 메모 /)).toHaveLength(2); // 하나하나가 각각의 카드
 
   // 이동 중에 바로 체크
   await fireEvent.press(screen.getByRole('checkbox', { name: '교통카드 구입' }));
@@ -289,6 +294,46 @@ test('travel notes are separate cards between two places; each can be checked of
   // 카드를 누르면 그 메모 화면이 열린다
   await fireEvent.press(screen.getByLabelText('이동 메모 현금 2,000엔'));
   expect(open).toHaveBeenCalledWith(notes[1].id);
+});
+
+test('an empty memo page asks for at least one item instead of saving', async () => {
+  const { sv, days } = await dayWithStops(['A', 'B']);
+  const [a] = await sv.repo.listStops(days[0].id);
+  const done = jest.fn();
+  await render(withServices(sv, <AddNoteScreen dayId={days[0].id} afterStopId={a.id} onDone={done} />));
+  await fireEvent.press(screen.getByText('추가하기'));
+  expect(await screen.findByText('할 일을 하나 이상 적어 주세요')).toBeTruthy();
+  expect(done).not.toHaveBeenCalled();
+});
+
+test('the + between two places opens a sheet with place, transport and memo for that spot', async () => {
+  const { sv, trip, days } = await dayWithStops(['A', 'B', 'C']);
+  const add = jest.fn();
+  const transport = jest.fn();
+  const note = jest.fn();
+  await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={add} onAddTransport={transport} onAddNote={note} onOpenStop={noop} onExpenses={noop} onSettings={noop} />));
+  const [a, b] = await sv.repo.listStops(days[0].id);
+  const adds = await screen.findAllByLabelText('이 사이에 추가');
+  expect(adds).toHaveLength(2); // A→B, B→C 사이마다 하나
+  await fireEvent.press(adds[1]);
+  await fireEvent.press(await screen.findByLabelText('이 사이에 추가: 장소'));
+  expect(add).toHaveBeenCalledWith(days[0].id, b.id);
+  await fireEvent.press((await screen.findAllByLabelText('이 사이에 추가'))[0]);
+  await fireEvent.press(await screen.findByLabelText('이 사이에 추가: 교통'));
+  expect(transport).toHaveBeenCalledWith(days[0].id, days[0].date);
+  await fireEvent.press((await screen.findAllByLabelText('이 사이에 추가'))[0]);
+  await fireEvent.press(await screen.findByLabelText('이 사이에 추가: 메모'));
+  expect(note).toHaveBeenCalledWith(days[0].id, a.id);
+});
+
+test('a place added from the + between two places goes right after the first one and its travel notes', async () => {
+  const { sv, days } = await dayWithStops(['A', 'B', 'C']);
+  const [a, b, c] = await sv.repo.listStops(days[0].id);
+  await sv.repo.addNotes(days[0].id, a.id, ['교통카드 구입']);
+  const [x] = await appendStops(sv, days[0].id, [{ place: { placeId: null, name: 'X', lat: 1, lng: 1 }, afterStopId: a.id }]);
+  const seq = (await sv.repo.listSequence(days[0].id)).map((i) => i.id);
+  const [note] = await sv.repo.listNotesForDay(days[0].id);
+  expect(seq).toEqual([a.id, note.id, x.id, b.id, c.id]);
 });
 
 test('plan items can be checked off right from the itinerary', async () => {

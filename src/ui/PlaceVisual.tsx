@@ -2,13 +2,14 @@
 import { Image } from 'expo-image';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { thumbOf } from '@/domain/media';
 import type { Photo, PlaceKind, Stop } from '@/domain/types';
 import type { PlaceDetails } from '@/google/places';
 import { useServices } from '@/state/ServicesContext';
 import { colors, radius } from '@/theme/tokens';
+import { Text } from '@/ui/Text';
 
 export const KIND_SYMBOL: Record<PlaceKind, SFSymbol> = {
   food: 'fork.knife',
