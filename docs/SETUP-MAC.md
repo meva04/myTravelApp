@@ -162,13 +162,14 @@ xcrun devicectl manage pair --device <아이폰-UDID>
 `npx expo run:ios --configuration Release --device` 는 프로비저닝 프로필을 자동으로 받지 못해 실패한다. `xcodebuild` 로 직접 빌드한다.
 
 ```bash
-cd ios && pod install && LANG=en_US.UTF-8 xcodebuild -workspace tripnote.xcworkspace -scheme tripnote -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build -allowProvisioningUpdates build
+cd ios && pod install && LANG=en_US.UTF-8 xcodebuild -workspace tripnote.xcworkspace -scheme tripnote -configuration Release -destination 'generic/platform=iOS' -derivedDataPath DerivedData -allowProvisioningUpdates build
 ```
 
 ```bash
-xcrun devicectl device install app --device <아이폰-UDID> build/Build/Products/Release-iphoneos/tripnote.app
+xcrun devicectl device install app --device <아이폰-UDID> DerivedData/Build/Products/Release-iphoneos/tripnote.app
 ```
 
+- 빌드 결과는 `ios/DerivedData` 에 둔다. `ios/build` 에는 React Native 가 만든 코드(`ios/build/generated`)가 있어서 지우면 빌드가 깨진다. 공간이 필요하면 `ios/DerivedData` 만 지운다. 실수로 `ios/build` 를 지웠으면 `cd ios && LANG=en_US.UTF-8 pod install` 로 다시 만든다.
 - 무료 팀이라 설치한 앱은 **7일 뒤 만료**된다. 만료 전에 다시 빌드해 설치하면 데이터는 그대로 남는다.
 - 설치하는 동안 아이폰 잠금을 풀어 둔다.
 
