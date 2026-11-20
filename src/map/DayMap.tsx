@@ -1,5 +1,5 @@
-import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { AccessibilityInfo, StyleSheet, View } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 
 import { allVisible, fitRegion, nearestStopAt, nextRegion, type CameraEvent, type Region } from '@/domain/camera';
@@ -7,6 +7,7 @@ import type { LatLng, Leg, Stop } from '@/domain/types';
 import { colors, fonts, radius, stopColor } from '@/theme/tokens';
 import { Text } from '@/ui/Text';
 
+import { drawnLines, easeOut } from './drawRoute';
 import { selectedOption } from './legRoutes';
 import mapStyle from './mapStyle.json';
 import { groupPins, pinLabel, type Selection } from './points';
@@ -31,6 +32,9 @@ type Props = {
   onAllVisible?: (visible: boolean) => void;
 };
 
+/** 날을 열 때 경로가 처음부터 끝까지 이어 그려지는 시간 */
+const DRAW_MS = 1200;
+
 const toMap = (r: Region) => ({ latitude: r.lat, longitude: r.lng, latitudeDelta: r.latDelta, longitudeDelta: r.lngDelta });
 
 /**
@@ -47,6 +51,40 @@ export const DayMap = forwardRef<DayMapHandle, Props>(function DayMap({ initialP
   const current = useRef<Region | null>(initial);
   // 사용자가 정한 화면이 있는지. 맞춘 화면이 있거나 사용자가 직접 움직였을 때만 true.
   const hasView = useRef(initial !== null);
+
+  // 그날 경로를 처음 받으면 한 번, 경로 선이 하루 순서대로 빠르게 이어 그려진다 (날을 바꾸면 이 지도가 새로 그려져 다시 한다).
+  const [progress, setProgress] = useState(0);
+  const drawn = useRef(false);
+  const hasRoute = legs.some((l) => (selectedOption(l)?.polyline.length ?? 0) > 1);
+  useEffect(() => {
+    if (drawn.current || !hasRoute) return;
+    drawn.current = true;
+    let frame = 0;
+    let alive = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((reduce) => {
+      if (!alive) return;
+      if (reduce) return setProgress(1);
+      const start = Date.now();
+      const step = () => {
+        const t = (Date.now() - start) / DRAW_MS;
+        setProgress(t >= 1 ? 1 : t);
+        if (t < 1) frame = requestAnimationFrame(step);
+      };
+      frame = requestAnimationFrame(step);
+    });
+    return () => {
+      alive = false;
+      cancelAnimationFrame(frame);
+    };
+  }, [hasRoute]);
+  // 하루 순서(앞 장소 순)대로 이어 보고, 지금 진행만큼 잘라 둔다
+  const order = (l: Leg) => stops.findIndex((x) => x.id === l.fromStopId);
+  const routed = legs.filter((l) => (selectedOption(l)?.polyline.length ?? 0) > 1).sort((x, y) => order(x) - order(y));
+  const partial = drawnLines(
+    routed.map((l) => selectedOption(l)!.polyline),
+    easeOut(progress),
+  );
+  const shownLine = new Map(routed.map((l, i) => [l.id, partial[i]]));
 
   useImperativeHandle(ref, () => ({
     send(e) {
@@ -91,10 +129,12 @@ export const DayMap = forwardRef<DayMapHandle, Props>(function DayMap({ initialP
         const option = selectedOption(leg);
         if (!option) return null; // 경로를 받기 전에는 선을 그리지 않는다 (직선 금지)
         const on = selection?.type === 'leg' && selection.id === leg.id;
+        const line = shownLine.get(leg.id) ?? [];
+        if (line.length < 2) return null; // 아직 그려지지 않은 구간
         return (
           <Polyline
             key={`${leg.id}:${option.id}`}
-            coordinates={option.polyline.map((p) => ({ latitude: p.lat, longitude: p.lng }))}
+            coordinates={line.map((p) => ({ latitude: p.lat, longitude: p.lng }))}
             strokeColor={on ? colors.accent : colors.route}
             strokeWidth={on ? 7 : 4}
             zIndex={on ? 2 : 1}
