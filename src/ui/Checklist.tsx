@@ -20,6 +20,8 @@ type Props = {
   autoFocus?: boolean;
   /** 새 항목 칸에 적는 중인 글 (저장 버튼을 누를 때 함께 넣으려고) */
   onDraft?: (text: string) => void;
+  /** 오렌지(고른) 카드 위에 놓일 때 밝은 글자로 */
+  onDark?: boolean;
 };
 
 /** 적는 중이던 새 항목까지 포함한 목록 */
@@ -27,7 +29,7 @@ export function withDraft(items: CheckItem[], draft: string): CheckItem[] {
   return draft.trim() ? [...items, { id: `d${Date.now()}`, text: draft.trim(), done: false }] : items;
 }
 
-export function Checklist({ items, onChange, editable = false, placeholder, max, compact = false, autoFocus = false, onDraft }: Props) {
+export function Checklist({ items, onChange, editable = false, placeholder, max, compact = false, autoFocus = false, onDraft, onDark = false }: Props) {
   // 새 항목 칸은 글을 다 적고 줄바꿈(완료)하거나 칸을 떠날 때 항목이 된다.
   // (글자마다 항목을 만들면 한글 조합이 끊기고 아래에 빈 칸이 계속 생긴다)
   const seq = useRef(0);
@@ -61,9 +63,9 @@ export function Checklist({ items, onChange, editable = false, placeholder, max,
               accessibilityLabel={it.text}
               hitSlop={8}
               onPress={() => onChange(toggleItem(items, it.id))}
-              style={[styles.box, compact && styles.boxSmall, it.done && styles.boxOn]}
+              style={[styles.box, compact && styles.boxSmall, onDark && styles.boxDark, it.done && styles.boxOn, it.done && onDark && styles.boxOnDark]}
             >
-              {it.done && <Text style={[styles.tick, compact && { fontSize: 10 }]}>✓</Text>}
+              {it.done && <Text style={[styles.tick, compact && { fontSize: 10 }, onDark && { color: colors.brand }]}>✓</Text>}
             </Pressable>
             {editable ? (
               <TextInput
@@ -75,7 +77,7 @@ export function Checklist({ items, onChange, editable = false, placeholder, max,
                 onSubmitEditing={() => newInput.current?.focus()}
               />
             ) : (
-              <Text style={[styles.text, compact && styles.textSmall, it.done && styles.done]}>{it.text}</Text>
+              <Text style={[styles.text, compact && styles.textSmall, onDark && styles.textDark, it.done && styles.done]}>{it.text}</Text>
             )}
             {editable && (
               <Pressable accessibilityRole="button" accessibilityLabel={`${it.text} ${t('common.delete')}`} hitSlop={8} onPress={() => remove(it.id)}>
@@ -103,7 +105,7 @@ export function Checklist({ items, onChange, editable = false, placeholder, max,
           </View>
         ),
       )}
-      {rest > 0 && <Text style={styles.more}>{t('check.more', { n: rest })}</Text>}
+      {rest > 0 && <Text style={[styles.more, onDark && styles.textDark]}>{t('check.more', { n: rest })}</Text>}
     </View>
   );
 }
@@ -113,6 +115,9 @@ const styles = StyleSheet.create({
   box: { width: 20, height: 20, borderRadius: radius.sm, borderWidth: 1.5, borderColor: colors.inkSoft, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card },
   boxSmall: { width: 16, height: 16 },
   boxOn: { backgroundColor: colors.ok, borderColor: colors.ok },
+  boxDark: { backgroundColor: 'transparent', borderColor: colors.onBrandSoft },
+  boxOnDark: { backgroundColor: colors.card, borderColor: colors.card },
+  textDark: { color: colors.card },
   boxNew: { borderStyle: 'dashed', borderColor: colors.line },
   tick: { color: colors.card, fontSize: 12, fontWeight: '700' },
   text: { flex: 1, fontSize: fonts.size.sm, color: colors.ink },

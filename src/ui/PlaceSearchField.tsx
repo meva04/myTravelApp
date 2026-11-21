@@ -70,7 +70,7 @@ export function PlaceSearchField({ label, value, onChange }: { label: string; va
 }
 
 const styles = StyleSheet.create({
-  chosen: { flexDirection: 'row', alignItems: 'center', gap: space.md, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.card, padding: space.md },
+  chosen: { flexDirection: 'row', alignItems: 'center', gap: space.md, borderRadius: radius.md, backgroundColor: colors.card, padding: space.md },
   label: { fontSize: fonts.size.md, color: colors.inkSoft },
   value: { fontSize: fonts.size.md, color: colors.ink, fontWeight: '600' },
   change: { fontSize: fonts.size.xs, color: colors.route },

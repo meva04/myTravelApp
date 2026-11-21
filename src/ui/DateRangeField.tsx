@@ -107,7 +107,7 @@ export function DateRangeField({ label, startLabel, endLabel, from, to, openAt, 
           </View>
           <View style={styles.grid}>
             {WEEK.map((w, i) => (
-              <Text key={w} style={[styles.week, i === 0 && { color: colors.accent }]}>
+              <Text key={w} style={[styles.week, i === 0 && { color: colors.danger }]}>
                 {w}
               </Text>
             ))}
@@ -142,7 +142,7 @@ function Nav({ label, a11y, onPress }: { label: string; a11y: string; onPress: (
 }
 
 const styles = StyleSheet.create({
-  field: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm, borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.card, padding: space.md },
+  field: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm, borderRadius: radius.md, backgroundColor: colors.well, padding: space.md },
   label: { fontSize: fonts.size.md, color: colors.inkSoft },
   value: { flexShrink: 1, fontSize: fonts.size.md, color: colors.ink, fontWeight: '600' },
   empty: { color: colors.inkSoft, fontWeight: '400' },

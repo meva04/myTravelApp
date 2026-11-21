@@ -19,6 +19,6 @@ export function OffscreenHint({ bearing, onGo }: { bearing: number; onGo: () => 
 
 const styles = StyleSheet.create({
   wrap: { position: 'absolute', top: space.lg, left: 0, right: 0, alignItems: 'center' },
-  box: { flexDirection: 'row', alignItems: 'center', gap: space.sm, backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, paddingLeft: space.md, padding: space.xs },
+  box: { flexDirection: 'row', alignItems: 'center', gap: space.sm, backgroundColor: colors.card, borderRadius: radius.lg, paddingLeft: space.md, padding: space.xs },
   arrow: { fontSize: fonts.size.lg, color: colors.accent, fontWeight: '700' },
 });

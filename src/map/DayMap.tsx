@@ -4,10 +4,11 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 
 import { allVisible, fitRegion, nearestStopAt, nextRegion, type CameraEvent, type Region } from '@/domain/camera';
 import type { LatLng, Leg, Stop } from '@/domain/types';
+import { askWhenInUse } from '@/location/permissions';
 import { colors, fonts, radius, stopColor } from '@/theme/tokens';
 import { Text } from '@/ui/Text';
 
-import { drawnLines, easeOut } from './drawRoute';
+import { drawnLines, easeOut, smoothLine } from './drawRoute';
 import { selectedOption } from './legRoutes';
 import mapStyle from './mapStyle.json';
 import { groupPins, pinLabel, type Selection } from './points';
@@ -56,6 +57,15 @@ export const DayMap = forwardRef<DayMapHandle, Props>(function DayMap({ initialP
   const [progress, setProgress] = useState(0);
   const drawn = useRef(false);
   const hasRoute = legs.some((l) => (selectedOption(l)?.polyline.length ?? 0) > 1);
+  // 지도를 처음 열 때 위치 권한을 물어, 허락하면 현재 위치를 보여 준다
+  const [located, setLocated] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    void askWhenInUse().then((ok) => alive && setLocated(ok));
+    return () => {
+      alive = false;
+    };
+  }, []);
   useEffect(() => {
     if (drawn.current || !hasRoute) return;
     drawn.current = true;
@@ -80,8 +90,9 @@ export const DayMap = forwardRef<DayMapHandle, Props>(function DayMap({ initialP
   // 하루 순서(앞 장소 순)대로 이어 보고, 지금 진행만큼 잘라 둔다
   const order = (l: Leg) => stops.findIndex((x) => x.id === l.fromStopId);
   const routed = legs.filter((l) => (selectedOption(l)?.polyline.length ?? 0) > 1).sort((x, y) => order(x) - order(y));
+  // 길찾기 경로는 잔 꺾임이 많아 삐죽해 보이므로, 걷어 내고 모서리를 둥글게 해서 그린다
   const partial = drawnLines(
-    routed.map((l) => selectedOption(l)!.polyline),
+    routed.map((l) => smoothLine(selectedOption(l)!.polyline)),
     easeOut(progress),
   );
   const shownLine = new Map(routed.map((l, i) => [l.id, partial[i]]));
@@ -104,7 +115,8 @@ export const DayMap = forwardRef<DayMapHandle, Props>(function DayMap({ initialP
       provider={PROVIDER_GOOGLE}
       customMapStyle={mapStyle}
       initialRegion={initial ? toMap(initial) : undefined}
-      showsUserLocation
+      // 현재 위치(파란 점). 위치 권한을 받은 뒤에 켠다.
+      showsUserLocation={located}
       showsMyLocationButton={false}
       mapPadding={{ top: topInset, left: 0, right: 0, bottom: bottomInset }}
       toolbarEnabled={false}
@@ -119,7 +131,9 @@ export const DayMap = forwardRef<DayMapHandle, Props>(function DayMap({ initialP
         // 방문지 판정은 여기서 한다. 지도 빈 곳을 누르면 선택을 풀지 않고 그대로 둔다.
         const r = current.current;
         if (!r) return;
-        const tap = { lat: e.nativeEvent.coordinate.latitude, lng: e.nativeEvent.coordinate.longitude };
+        const c = e.nativeEvent.coordinate;
+        if (!c) return;
+        const tap = { lat: c.latitude, lng: c.longitude };
         const id = nearestStopAt(tap, stops, r);
         if (id) onSelect({ type: 'stop', id });
       }}
@@ -136,7 +150,10 @@ export const DayMap = forwardRef<DayMapHandle, Props>(function DayMap({ initialP
             key={`${leg.id}:${option.id}`}
             coordinates={line.map((p) => ({ latitude: p.lat, longitude: p.lng }))}
             strokeColor={on ? colors.accent : colors.route}
-            strokeWidth={on ? 7 : 4}
+            // 두께는 늘 같게, 고른 구간은 색으로만 구분한다
+            strokeWidth={5}
+            lineCap="round"
+            lineJoin="round"
             zIndex={on ? 2 : 1}
             tappable
             onPress={() => onSelect({ type: 'leg', id: leg.id })}

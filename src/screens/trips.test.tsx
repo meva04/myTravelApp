@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 import { Alert } from 'react-native';
 
 import { OfflineError } from '@/google/errors';
-import { setSkipped } from '@/state/itineraryOps';
+import { moveStop, setSkipped } from '@/state/itineraryOps';
 import { pickDate, pickTime } from '@/testing/pickers';
 import { makeTestServices, withServices } from '@/testing/services';
 
@@ -55,10 +55,10 @@ test('trip home shows one tab per day', async () => {
   const sv = await makeTestServices();
   const trip = await sv.repo.createTrip({ name: 't', city: 'c', startDate: '2027-03-01', endDate: '2027-03-03', baseCurrency: 'KRW' });
   await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={noop} onOpenStop={noop} onExpenses={noop} onSettings={noop} />));
-  expect(await screen.findByText('1일차')).toBeTruthy();
-  expect(screen.getByText('2일차')).toBeTruthy();
-  expect(screen.getByText('3일차')).toBeTruthy();
-  expect(screen.queryByText('4일차')).toBeNull();
+  expect(await screen.findByLabelText('1일차')).toBeTruthy();
+  expect(screen.getByLabelText('2일차')).toBeTruthy();
+  expect(screen.getByLabelText('3일차')).toBeTruthy();
+  expect(screen.queryByLabelText('4일차')).toBeNull();
   expect(screen.getByText('이 날은 아직 비어 있어요')).toBeTruthy();
 });
 
@@ -169,8 +169,7 @@ test('deleting the only stop of a day empties the day', async () => {
   const { sv, trip, days } = await dayWithStops(['센소지']);
   jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => buttons?.find((b) => b.style === 'destructive')?.onPress?.());
   await render(home(sv, trip.id));
-  await fireEvent.press(await screen.findByText('편집'));
-  await fireEvent.press(await screen.findByText('삭제'));
+  await fireEvent.press(await screen.findByLabelText('센소지 삭제'));
   expect(await screen.findByText('이 날은 아직 비어 있어요')).toBeTruthy();
   expect(await sv.repo.listStops(days[0].id)).toEqual([]);
 });
@@ -179,11 +178,8 @@ test('moving a stop to another day carries its expenses to that date', async () 
   const { sv, trip, days } = await dayWithStops(['A', 'B'], 2);
   const [a] = await sv.repo.listStops(days[0].id);
   await sv.repo.addExpense({ tripId: trip.id, date: '2027-03-01', stopId: a.id, amount: 100, currency: 'KRW', category: 'food', memo: '' });
-  await render(home(sv, trip.id));
-  await fireEvent.press(await screen.findByText('편집'));
-  await fireEvent.press((await screen.findAllByText('다른 날로'))[0]);
-  await fireEvent.press(screen.getAllByText('2일차')[1]);
-  await screen.findByText('B');
+  // 다른 날로 옮기기는 장소 상세 화면에서 한다
+  await moveStop(sv, a, days[1]);
   expect((await sv.repo.listStops(days[1].id)).map((s) => s.name)).toEqual(['A']);
   expect((await sv.repo.listStops(days[0].id)).map((s) => [s.name, s.order])).toEqual([['B', 0]]);
   expect((await sv.repo.listExpenses(trip.id))[0].date).toBe('2027-03-02');
@@ -233,21 +229,45 @@ test('changing a leg to transit re-measures it with that mode', async () => {
   expect(await screen.findByText('900m')).toBeTruthy();
 });
 
-test('tapping a place card opens that place right away', async () => {
+test('tapping a place card only shows it on the map; the arrow opens the place', async () => {
   const { sv, trip, days } = await dayWithStops(['A', 'B']);
   const open = jest.fn();
   await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={noop} onOpenStop={open} onExpenses={noop} onSettings={noop} />));
+  // 카드(이름)를 누르면 지도만 옮기고 열지 않는다
   await fireEvent.press(await screen.findByText('B'));
+  expect(open).not.toHaveBeenCalled();
+  // 오른쪽 화살표를 눌러야 장소가 열린다
+  await fireEvent.press(screen.getByLabelText('B 자세히'));
   const [, b] = await sv.repo.listStops(days[0].id);
   expect(open).toHaveBeenCalledWith(b.id);
 });
 
-test('the add button adds a stop to the shown day', async () => {
-  const { sv, trip, days } = await dayWithStops(['A']);
+test('the + at the end of the list adds a place or a note after the last place', async () => {
+  const { sv, trip, days } = await dayWithStops(['A', 'B']);
   const add = jest.fn();
-  await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={add} onOpenStop={noop} onExpenses={noop} onSettings={noop} />));
-  await fireEvent.press(await screen.findByLabelText('장소 추가'));
+  const note = jest.fn();
+  await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={add} onAddNote={note} onOpenStop={noop} onExpenses={noop} onSettings={noop} />));
+  // 평소엔 + 가 없고, 오른쪽 아래 추가 버튼을 눌러야 나타난다
+  await screen.findByText('B');
+  expect(screen.queryByLabelText('맨 뒤에 추가')).toBeNull();
+  await fireEvent.press(screen.getByLabelText('추가하기'));
+  expect(screen.getByText('원하는 위치의 + 를 누르세요')).toBeTruthy();
+  await fireEvent.press(await screen.findByLabelText('맨 뒤에 추가'));
+  await fireEvent.press(screen.getByLabelText('맨 뒤에 추가: 장소'));
   expect(add).toHaveBeenCalledWith(days[0].id);
+  await fireEvent.press(screen.getByLabelText('맨 뒤에 추가'));
+  await fireEvent.press(screen.getByLabelText('맨 뒤에 추가: 메모'));
+  const [, b] = await sv.repo.listStops(days[0].id);
+  expect(note).toHaveBeenCalledWith(days[0].id, b.id);
+});
+
+test('an empty day offers only place and transport at the end', async () => {
+  const { sv, trip } = await dayWithStops([]);
+  await render(home(sv, trip.id));
+  await fireEvent.press(await screen.findByLabelText('추가하기'));
+  await fireEvent.press(await screen.findByLabelText('맨 뒤에 추가'));
+  expect(screen.getByLabelText('맨 뒤에 추가: 장소')).toBeTruthy();
+  expect(screen.queryByLabelText('맨 뒤에 추가: 메모')).toBeNull();
 });
 
 test('hidden places leave the itinerary and its legs, and can be put back', async () => {
@@ -313,6 +333,8 @@ test('the + between two places opens a sheet with place, transport and memo for 
   const note = jest.fn();
   await render(withServices(sv, <TripHomeScreen tripId={trip.id} onAddStop={add} onAddTransport={transport} onAddNote={note} onOpenStop={noop} onExpenses={noop} onSettings={noop} />));
   const [a, b] = await sv.repo.listStops(days[0].id);
+  expect(screen.queryAllByLabelText('이 사이에 추가')).toHaveLength(0); // 평소엔 숨김
+  await fireEvent.press(await screen.findByLabelText('추가하기'));
   const adds = await screen.findAllByLabelText('이 사이에 추가');
   expect(adds).toHaveLength(2); // A→B, B→C 사이마다 하나
   await fireEvent.press(adds[1]);
@@ -396,7 +418,7 @@ test('a past day opens as a diary of visited places, and can be switched back to
   await sv.repo.setStopMemo(a.id, '햇살이 좋았다');
   await sv.repo.addPhoto({ stopId: a.id, uri: 'a.jpg', takenAt: '2027-03-01T01:00:00.000Z', lat: null, lng: null });
   await render(home(sv, trip.id, '2027-03-02'));
-  await fireEvent.press(await screen.findByText('1일차'));
+  await fireEvent.press(await screen.findByLabelText('1일차'));
   expect(await screen.findByTestId('diary')).toBeTruthy();
   expect(screen.getByText('햇살이 좋았다')).toBeTruthy();
   expect(screen.getByText('가지 못한 곳 · B')).toBeTruthy();
@@ -411,7 +433,7 @@ test('in the diary, a place without text invites you to write, and 편집 opens 
   await sv.repo.markStopArrived(a.id, new Date(2027, 2, 1, 10, 0).toISOString(), 'manual');
   const open = jest.fn();
   await render(withServices(sv, <TripHomeScreen tripId={trip.id} today="2027-03-02" onAddStop={noop} onOpenStop={open} onExpenses={noop} onSettings={noop} />));
-  await fireEvent.press(await screen.findByText('1일차'));
+  await fireEvent.press(await screen.findByLabelText('1일차'));
   await fireEvent.press(await screen.findByText('이 장소에서의 추억을 글로 적어보세요'));
   expect(open).toHaveBeenLastCalledWith(a.id);
   await fireEvent.press(screen.getByLabelText('A 편집'));
@@ -427,7 +449,7 @@ test('in the diary, a photo opens full screen and the day ends with what was spe
   await sv.repo.addExpense({ tripId: trip.id, date: '2027-03-01', stopId: a.id, amount: 12000, currency: 'KRW', category: 'food', memo: '점심' });
   await sv.repo.addExpense({ tripId: trip.id, date: '2027-03-02', stopId: null, amount: 999, currency: 'KRW', category: 'etc', memo: '다른 날' });
   await render(home(sv, trip.id, '2027-03-02'));
-  await fireEvent.press(await screen.findByText('1일차'));
+  await fireEvent.press(await screen.findByLabelText('1일차'));
   const photos = await screen.findAllByLabelText('사진 크게 보기');
   expect(photos).toHaveLength(2);
   await fireEvent.press(photos[1]);

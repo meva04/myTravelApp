@@ -1,4 +1,4 @@
-import { drawnLines, easeOut } from './drawRoute';
+import { drawnLines, easeOut, roundCorners, simplifyLine } from './drawRoute';
 
 const a = [
   { lat: 0, lng: 0 },
@@ -33,4 +33,28 @@ test('easing starts fast and ends at 1', () => {
   expect(easeOut(0.5)).toBeGreaterThan(0.5);
   expect(easeOut(1)).toBe(1);
   expect(easeOut(2)).toBe(1);
+});
+
+test('tiny zigzags along a road are removed but real turns stay', () => {
+  // 동쪽으로 가다 1m 남짓 들쭉날쭉 → 북쪽으로 꺾는다 (경도 0.001 ≈ 111m)
+  const line = [
+    { lat: 0, lng: 0 },
+    { lat: 0.00001, lng: 0.001 },
+    { lat: -0.00001, lng: 0.002 },
+    { lat: 0, lng: 0.003 },
+    { lat: 0.003, lng: 0.003 },
+  ];
+  expect(simplifyLine(line)).toEqual([line[0], line[3], line[4]]);
+});
+
+test('rounding keeps both ends on the places and softens the corner', () => {
+  const line = [
+    { lat: 0, lng: 0 },
+    { lat: 0, lng: 1 },
+    { lat: 1, lng: 1 },
+  ];
+  const r = roundCorners(line);
+  expect(r[0]).toEqual(line[0]);
+  expect(r[r.length - 1]).toEqual(line[2]);
+  expect(r).not.toContainEqual(line[1]);
 });

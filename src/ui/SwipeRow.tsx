@@ -36,6 +36,6 @@ export function SwipeRow({ children, onDelete, label, enabled = true }: { childr
 }
 
 const styles = StyleSheet.create({
-  delete: { width: 84, marginVertical: space.xs, marginLeft: space.sm, borderRadius: radius.lg, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center' },
+  delete: { width: 84, marginVertical: space.xs, marginLeft: space.sm, borderRadius: radius.lg, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center' },
   deleteText: { color: '#fff', fontWeight: '700', fontSize: fonts.size.sm },
 });

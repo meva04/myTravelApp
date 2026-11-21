@@ -8,8 +8,14 @@ jest.mock('react-native-reanimated', () => {
     useSharedValue: (value) => ({ value }),
     useAnimatedStyle: (fn) => fn(),
     withSpring: (value) => value,
+    withTiming: (value) => value,
     interpolate: (_v, _input, output) => output[0],
     Extrapolation: { CLAMP: 'clamp' },
+    // 화면에 나타나고 사라지는 애니메이션은 테스트에서는 아무것도 하지 않는다 (체이닝만 되게)
+    ...Object.fromEntries(['FadeIn', 'FadeOut', 'FadeInLeft', 'ZoomIn', 'ZoomOut', 'LinearTransition', 'SlideInDown', 'SlideOutDown'].map((n) => {
+      const anim = new Proxy({}, { get: () => () => anim });
+      return [n, anim];
+    })),
   };
 });
 jest.mock('react-native-sortables', () => {

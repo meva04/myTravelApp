@@ -54,7 +54,7 @@ export function FormPage({ title, onBack, children, submitLabel, onSubmit, notic
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.paper },
   top: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.md, paddingBottom: space.sm },
-  back: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
+  back: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.card },
   backText: { fontSize: 26, lineHeight: 28, color: colors.ink, marginTop: -2 },
   title: { flex: 1, fontSize: fonts.size.lg, fontWeight: '700', color: colors.ink },
   body: { paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.xl, gap: space.md },

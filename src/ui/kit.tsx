@@ -21,7 +21,7 @@ export function Txt({ children, kind = 'body', style }: { children: ReactNode; k
 export function Button({ label, onPress, kind = 'primary', style }: { label: string; onPress: () => void; kind?: 'primary' | 'ghost' | 'danger'; style?: StyleProp<ViewStyle> }) {
   return (
     <Pressable accessibilityRole="button" onPress={onPress} style={({ pressed }) => [styles.btn, styles[`btn_${kind}`], pressed && styles.pressed, style]}>
-      <Text style={[styles.btnText, kind !== 'primary' && { color: kind === 'danger' ? colors.accent : colors.ink }]}>{label}</Text>
+      <Text style={[styles.btnText, kind !== 'primary' && { color: kind === 'danger' ? colors.danger : colors.ink }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -58,15 +58,15 @@ const styles = StyleSheet.create({
   body: { fontSize: fonts.size.md, color: colors.ink },
   soft: { fontSize: fonts.size.sm, color: colors.inkSoft },
   small: { fontSize: fonts.size.xs, color: colors.ink },
-  btn: { paddingVertical: space.md, paddingHorizontal: space.lg, borderRadius: radius.md, alignItems: 'center' },
-  btn_primary: { backgroundColor: colors.ink },
-  btn_ghost: { borderWidth: 1, borderColor: colors.line, backgroundColor: colors.card },
-  btn_danger: { borderWidth: 1, borderColor: colors.accent, backgroundColor: colors.card },
+  btn: { paddingVertical: space.md + 2, paddingHorizontal: space.lg, borderRadius: radius.pill, alignItems: 'center' },
+  btn_primary: { backgroundColor: colors.brand },
+  btn_ghost: { backgroundColor: colors.well },
+  btn_danger: { backgroundColor: colors.card },
   btnText: { color: colors.card, fontSize: fonts.size.md, fontWeight: '600' },
   pressed: { opacity: 0.6 },
-  field: { borderWidth: 1, borderColor: colors.line, borderRadius: radius.md, backgroundColor: colors.card, padding: space.md, fontSize: fonts.size.md, color: colors.ink },
-  card: { backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, padding: space.lg, gap: space.xs },
-  chip: { paddingVertical: space.xs, paddingHorizontal: space.md, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.card },
-  chipOn: { backgroundColor: colors.ink, borderColor: colors.ink },
+  field: { borderRadius: radius.md, backgroundColor: colors.well, padding: space.md, fontSize: fonts.size.md, color: colors.ink },
+  card: { backgroundColor: colors.card, borderRadius: radius.lg, padding: space.lg, gap: space.xs },
+  chip: { paddingVertical: space.sm, paddingHorizontal: space.md + 2, borderRadius: radius.pill, backgroundColor: colors.card },
+  chipOn: { backgroundColor: colors.brand },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
 });

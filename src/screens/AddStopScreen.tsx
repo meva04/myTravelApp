@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
   sub: { fontSize: fonts.size.sm, color: colors.inkSoft, marginTop: 2 },
   category: { maxWidth: 110, fontSize: fonts.size.xs, color: colors.inkSoft, paddingVertical: 2, paddingHorizontal: space.sm, borderRadius: radius.pill, backgroundColor: colors.accentSoft, overflow: 'hidden' },
   plus: { fontSize: fonts.size.lg, color: colors.inkSoft, paddingHorizontal: space.sm },
-  card: { padding: space.lg, gap: space.md, borderRadius: radius.lg, backgroundColor: colors.card, borderWidth: 1, borderColor: colors.line },
+  card: { padding: space.lg, gap: space.md, borderRadius: radius.lg, backgroundColor: colors.card },
   cardName: { fontSize: fonts.size.lg, fontWeight: '700', color: colors.ink },
   close: { fontSize: fonts.size.md, color: colors.inkSoft },
   google: { alignSelf: 'flex-start', paddingVertical: space.xs + 2, paddingHorizontal: space.md, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line },
