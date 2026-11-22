@@ -25,9 +25,9 @@ export function SheetModal({ title, subtitle, children, footer, onClose }: { tit
 }
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.25)' },
-  sheet: { backgroundColor: colors.card, padding: space.lg, paddingBottom: space.xl, gap: space.md, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, maxHeight: '85%' },
-  title: { fontSize: fonts.size.lg, fontWeight: '700', color: colors.ink },
+  wrap: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(28,27,41,0.3)' },
+  sheet: { backgroundColor: colors.card, padding: space.lg, paddingBottom: space.xl, gap: space.md, borderTopLeftRadius: radius.sheet, borderTopRightRadius: radius.sheet, maxHeight: '85%' },
+  title: { fontSize: fonts.size.lg, fontWeight: '700', color: colors.ink, letterSpacing: -0.3 },
   subtitle: { fontSize: fonts.size.sm, color: colors.inkSoft, marginTop: -space.sm },
   body: { flexGrow: 0 },
 });

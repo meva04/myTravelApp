@@ -232,7 +232,7 @@ export function AddStopScreen({ dayId, afterStopId, onDone, onBack, openUrl = (u
 }
 
 const styles = StyleSheet.create({
-  fill: { flex: 1, backgroundColor: colors.paper },
+  fill: { flex: 1 },
   searchBar: { paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: space.sm, gap: space.sm },
   body: { paddingHorizontal: space.lg, paddingBottom: space.xl, gap: space.sm },
   hit: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.line },
@@ -240,7 +240,7 @@ const styles = StyleSheet.create({
   sub: { fontSize: fonts.size.sm, color: colors.inkSoft, marginTop: 2 },
   category: { maxWidth: 110, fontSize: fonts.size.xs, color: colors.inkSoft, paddingVertical: 2, paddingHorizontal: space.sm, borderRadius: radius.pill, backgroundColor: colors.accentSoft, overflow: 'hidden' },
   plus: { fontSize: fonts.size.lg, color: colors.inkSoft, paddingHorizontal: space.sm },
-  card: { padding: space.lg, gap: space.md, borderRadius: radius.lg, backgroundColor: colors.card },
+  card: { padding: space.lg, gap: space.md, borderRadius: radius.lg, backgroundColor: colors.well },
   cardName: { fontSize: fonts.size.lg, fontWeight: '700', color: colors.ink },
   close: { fontSize: fonts.size.md, color: colors.inkSoft },
   google: { alignSelf: 'flex-start', paddingVertical: space.xs + 2, paddingHorizontal: space.md, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.line },

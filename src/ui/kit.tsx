@@ -2,15 +2,25 @@
 import type { ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, View, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native';
 
-import { colors, fonts, radius, space } from '@/theme/tokens';
+import { colors, fonts, glow, gradients, radius, space } from '@/theme/tokens';
+import { Backdrop } from '@/ui/Backdrop';
 import { Text, TextInput } from '@/ui/Text';
 
 export function Screen({ children, scroll = true }: { children: ReactNode; scroll?: boolean }) {
-  if (!scroll) return <View style={styles.screen}>{children}</View>;
+  if (!scroll)
+    return (
+      <View style={styles.screen}>
+        <Backdrop />
+        {children}
+      </View>
+    );
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled">
-      {children}
-    </ScrollView>
+    <View style={styles.screen}>
+      <Backdrop />
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled">
+        {children}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -53,20 +63,20 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.paper },
   // 펼친 폴더블처럼 넓은 화면에서도 읽기 좋은 폭을 넘지 않게 가운데 둔다
   screenContent: { padding: space.lg, gap: space.md, width: '100%', maxWidth: 640, alignSelf: 'center' },
-  title: { fontSize: fonts.size.xl, color: colors.ink, fontWeight: '700' },
-  heading: { fontSize: fonts.size.lg, color: colors.ink, fontWeight: '600' },
+  title: { fontSize: fonts.size.xl, color: colors.ink, fontWeight: '700', letterSpacing: -0.5 },
+  heading: { fontSize: fonts.size.lg, color: colors.ink, fontWeight: '600', letterSpacing: -0.3 },
   body: { fontSize: fonts.size.md, color: colors.ink },
   soft: { fontSize: fonts.size.sm, color: colors.inkSoft },
   small: { fontSize: fonts.size.xs, color: colors.ink },
-  btn: { paddingVertical: space.md + 2, paddingHorizontal: space.lg, borderRadius: radius.pill, alignItems: 'center' },
-  btn_primary: { backgroundColor: colors.brand },
+  btn: { minHeight: 52, justifyContent: 'center', paddingHorizontal: space.lg, borderRadius: radius.pill, alignItems: 'center' },
+  btn_primary: { backgroundColor: colors.brand, experimental_backgroundImage: gradients.brand, ...glow },
   btn_ghost: { backgroundColor: colors.well },
   btn_danger: { backgroundColor: colors.card },
   btnText: { color: colors.card, fontSize: fonts.size.md, fontWeight: '600' },
   pressed: { opacity: 0.6 },
-  field: { borderRadius: radius.md, backgroundColor: colors.well, padding: space.md, fontSize: fonts.size.md, color: colors.ink },
-  card: { backgroundColor: colors.card, borderRadius: radius.lg, padding: space.lg, gap: space.xs },
-  chip: { paddingVertical: space.sm, paddingHorizontal: space.md + 2, borderRadius: radius.pill, backgroundColor: colors.card },
-  chipOn: { backgroundColor: colors.brand },
+  field: { borderRadius: radius.md, backgroundColor: colors.well, paddingVertical: space.md + 2, paddingHorizontal: space.lg, fontSize: fonts.size.md, color: colors.ink },
+  card: { backgroundColor: colors.card, borderRadius: radius.lg, padding: space.lg, gap: space.xs, shadowColor: '#6E6AF0', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
+  chip: { paddingVertical: space.sm + 1, paddingHorizontal: space.md + 2, borderRadius: radius.pill, backgroundColor: colors.well },
+  chipOn: { backgroundColor: colors.brand, experimental_backgroundImage: gradients.brand },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
 });

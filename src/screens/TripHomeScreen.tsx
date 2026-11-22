@@ -20,9 +20,8 @@ import { allPoints, targetOf, type Selection } from '@/map/points';
 import { useLegRoutes } from '@/map/useLegRoutes';
 import { saveDay, saveOrder, setSkipped } from '@/state/itineraryOps';
 import { useLoad, useServices } from '@/state/ServicesContext';
-import { colors, fonts, radius, space, stopColor } from '@/theme/tokens';
+import { colors, fonts, glow, gradients, radius, space, stopColor } from '@/theme/tokens';
 import { Checklist } from '@/ui/Checklist';
-import { Glass } from '@/ui/Glass';
 import { askWhenInUse, whereAmI } from '@/location/permissions';
 import { Text } from '@/ui/Text';
 import { formatAmounts, formatDistance, formatKm, formatTime } from '@/ui/format';
@@ -651,11 +650,11 @@ export function TripHomeScreen({
             <View style={{ flex: 1 }}>
               {mapView}
               <View style={styles.meWide}>
-                <Glass style={styles.meButton}>
+                <View style={styles.meButton}>
                 <Pressable accessibilityRole="button" accessibilityLabel={t('map.goToMe')} onPress={() => void goToMe()} hitSlop={6} style={({ pressed }) => [styles.meTap, pressed && { opacity: 0.6 }]}>
                   <SymbolView name="location.fill" size={20} tintColor={colors.route} fallback={<Text style={{ color: colors.route }}>◎</Text>} />
                 </Pressable>
-              </Glass>
+              </View>
               </View>
             </View>
           </View>
@@ -664,11 +663,11 @@ export function TripHomeScreen({
         <>
           <View style={StyleSheet.absoluteFill}>{mapView}</View>
           <Animated.View pointerEvents="box-none" style={[styles.meFloat, meStyle]}>
-            <Glass style={styles.meButton}>
+            <View style={styles.meButton}>
             <Pressable accessibilityRole="button" accessibilityLabel={t('map.goToMe')} onPress={() => void goToMe()} hitSlop={6} style={({ pressed }) => [styles.meTap, pressed && { opacity: 0.6 }]}>
               <SymbolView name="location.fill" size={20} tintColor={colors.route} fallback={<Text style={{ color: colors.route }}>◎</Text>} />
             </Pressable>
-          </Glass>
+          </View>
           </Animated.View>
           <BottomSheet
             ref={sheet}
@@ -734,13 +733,9 @@ export function TripHomeScreen({
   );
 }
 
-/** 일정 시트 바탕. 위 모서리만 둥근 유리. */
+/** 일정 시트 바탕. 위 모서리를 크게 둥글린 흰 면. */
 function SheetGlass({ style }: BottomSheetBackgroundProps) {
-  return (
-    <View pointerEvents="none" style={[style, styles.sheetGlass]}>
-      <Glass style={StyleSheet.absoluteFill} />
-    </View>
-  );
+  return <View pointerEvents="none" style={[style, styles.sheetGlass]} />;
 }
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -1161,13 +1156,17 @@ const styles = StyleSheet.create({
   topBarFloat: { position: 'absolute', left: 0, right: 0, top: 0 },
   handle: { height: HANDLE, paddingVertical: 0, justifyContent: 'center' },
   sheetGlass: {
-    borderTopLeftRadius: radius.lg + 4,
-    borderTopRightRadius: radius.lg + 4,
-    overflow: 'hidden',
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
+    backgroundColor: colors.card,
+    shadowColor: '#6E6AF0',
+    shadowOpacity: 0.12,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: -4 },
   },
   meFloat: { position: 'absolute', top: 0, right: space.lg },
   meWide: { position: 'absolute', right: space.lg, bottom: space.lg },
-  meButton: { width: ME, height: ME, borderRadius: ME / 2, overflow: 'hidden' },
+  meButton: { width: ME, height: ME, borderRadius: ME / 2, backgroundColor: colors.card, ...glow },
   meTap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   // 자세히 보기 화살표: 작은 글자지만 누르기 쉽게 넓게 잡는다
   openTap: { alignSelf: 'stretch', justifyContent: 'center', paddingHorizontal: space.sm },
@@ -1183,8 +1182,6 @@ const styles = StyleSheet.create({
     paddingTop: space.xs,
     paddingBottom: space.sm,
     gap: space.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.line,
   },
   tabs: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   dayTile: {
@@ -1195,19 +1192,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
-  dayTileOn: { backgroundColor: colors.brand },
+  dayTileOn: { backgroundColor: colors.card, ...glow },
   dayNum: { fontSize: fonts.size.md, fontWeight: '600', color: colors.inkSoft },
   dayWeek: { fontSize: fonts.size.sm, color: colors.inkSoft },
-  dayOn: { color: colors.card },
+  dayOn: { color: colors.brand },
   dayDot: { width: 5, height: 5, borderRadius: 3, marginTop: 2 },
-  dayDotOn: { backgroundColor: colors.card },
+  dayDotOn: { backgroundColor: colors.brand },
   row: { flexDirection: 'row', alignItems: 'stretch' },
   rail: { width: RAIL, alignItems: 'center', justifyContent: 'center' },
   railLine: {
     position: 'absolute',
     width: 2,
     left: RAIL / 2 - 1,
-    backgroundColor: colors.ink,
+    backgroundColor: colors.line,
   },
   dot: {
     width: DOT,
@@ -1228,13 +1225,13 @@ const styles = StyleSheet.create({
     marginVertical: space.xs,
     padding: space.md,
     borderRadius: radius.lg,
-    backgroundColor: colors.card,
+    backgroundColor: colors.well,
     // 평소엔 테두리가 보이지 않고, 고르면 검정 테두리가 생긴다 (두께가 같아 글자가 움직이지 않는다)
     borderWidth: 2,
     borderColor: 'transparent',
   },
   // 고른 장소는 브랜드 오렌지 카드로 뒤집는다
-  stopCardOn: { borderColor: colors.brand, backgroundColor: colors.brand },
+  stopCardOn: { borderColor: 'transparent', backgroundColor: colors.brand, experimental_backgroundImage: gradients.brand },
   onInk: { color: colors.card },
   onInkSoft: { color: colors.onBrandSoft },
   arrivedOnInk: { backgroundColor: colors.card, color: colors.brand },
@@ -1252,7 +1249,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.sm + 2,
     paddingVertical: 3,
     borderRadius: radius.pill,
-    backgroundColor: colors.ink,
+    backgroundColor: colors.brand,
     color: colors.card,
     fontWeight: '600',
     fontSize: fonts.size.xs,
@@ -1322,7 +1319,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: space.sm,
     borderRadius: radius.md,
-    backgroundColor: colors.paper,
+    backgroundColor: colors.well,
     alignItems: 'center',
   },
   legNavText: { fontSize: fonts.size.xs, fontWeight: '600', color: colors.ink },
@@ -1343,13 +1340,10 @@ const styles = StyleSheet.create({
     width: FAB,
     height: FAB,
     borderRadius: FAB / 2,
-    backgroundColor: colors.brand,
+    backgroundColor: colors.card,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: colors.brand,
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
+    ...glow,
   },
   addHint: {
     position: 'absolute',
@@ -1371,7 +1365,7 @@ const styles = StyleSheet.create({
   // 펼쳐지는 동안 글자가 줄바꿈되지 않게 폭을 고정한다
   addHintText: { width: HINT_W - FAB / 2 - space.sm - space.lg, fontSize: fonts.size.sm, fontWeight: '600', color: colors.ink, textAlign: 'right' },
   fabText: {
-    color: colors.card,
+    color: colors.brand,
     fontSize: 34,
     lineHeight: 38,
     fontWeight: '400',
@@ -1388,16 +1382,16 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.card,
+    backgroundColor: colors.brandSoft,
   },
-  addCircleText: { fontSize: 22, lineHeight: 24, color: colors.inkSoft },
+  addCircleText: { fontSize: 22, lineHeight: 24, color: colors.brand },
   addMenu: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   addChoice: {
     height: 36,
     justifyContent: 'center',
     paddingHorizontal: space.lg,
     borderRadius: radius.pill,
-    backgroundColor: colors.card,
+    backgroundColor: colors.well,
   },
   addChoiceText: {
     fontSize: fonts.size.md,
