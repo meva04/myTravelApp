@@ -1,11 +1,20 @@
 // 애니메이션·끌어서 정렬은 기기에서만 의미가 있으므로 테스트에서는 단순한 대체품을 쓴다.
 jest.mock('react-native-worklets', () => require('react-native-worklets/src/mock'));
 jest.mock('react-native-reanimated', () => {
-  const { View } = require('react-native');
+  const { View, Text } = require('react-native');
   return {
     __esModule: true,
-    default: { View },
-    useSharedValue: (value) => ({ value }),
+    default: { View, Text, createAnimatedComponent: (c) => c },
+    interpolateColor: (_v, _input, output) => output[0],
+    useSharedValue: (value) => ({
+      value,
+      get() {
+        return this.value;
+      },
+      set(v) {
+        this.value = v;
+      },
+    }),
     useAnimatedStyle: (fn) => fn(),
     withSpring: (value) => value,
     withTiming: (value) => value,
@@ -74,4 +83,14 @@ jest.mock('react-native-gesture-handler/ReanimatedSwipeable', () => {
     return React.createElement(View, null, props.children, props.renderRightActions?.({ value: 0 }, { value: 0 }, { close: () => {} }));
   });
   return { __esModule: true, default: Swipeable };
+});
+// 밀어서 바꾸는 토글 등 손가락 제스처는 기기에서만 돈다. 테스트에서는 감싼 내용만 보여 준다.
+jest.mock('react-native-gesture-handler', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    GestureHandlerRootView: (props) => React.createElement(View, props),
+    GestureDetector: (props) => props.children,
+    usePanGesture: () => ({}),
+  };
 });

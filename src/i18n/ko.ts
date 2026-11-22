@@ -155,6 +155,8 @@ export const ko = {
   'day.deleteStop': '이 장소를 일정에서 지울까요?',
   'day.planView': '계획 보기',
   'day.diaryView': '일기 보기',
+  'day.plan': '계획',
+  'day.diary': '일기',
   'diary.empty': '이 날의 기록이 아직 없어요.\n도착한 장소에 사진과 이야기를 남겨 보세요.',
   'diary.missed': '가지 못한 곳 · {names}',
   'diary.spent': '이 날 쓴 돈',

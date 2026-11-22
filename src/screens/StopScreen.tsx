@@ -13,7 +13,7 @@ import { googleMapsUrl } from '@/map/directions';
 import type { StopPrompt } from '@/location/promptsCore';
 import { deleteStop, moveStop, setSkipped } from '@/state/itineraryOps';
 import { useLoad, useServices } from '@/state/ServicesContext';
-import { colors, fonts, radius, space } from '@/theme/tokens';
+import { colors, fonts, gradients, radius, space } from '@/theme/tokens';
 import { ExpenseForm } from '@/ui/ExpenseForm';
 import { currencyChoices, defaultCurrencyOf } from '@/domain/currency';
 import { localToday } from '@/location/clock';
@@ -24,7 +24,7 @@ import { Button, Card, Chip, Field, Row, Screen, Txt } from '@/ui/kit';
 import { Checklist } from '@/ui/Checklist';
 import { DateField, TimeField } from '@/ui/PickerField';
 import { PhotoViewer } from '@/ui/PhotoViewer';
-import { PlaceHero } from '@/ui/PlaceHero';
+import { HERO_OVERLAP, PlaceHero } from '@/ui/PlaceHero';
 import { heroImages } from '@/ui/PlaceVisual';
 import { SeatMap } from '@/ui/SeatMap';
 import { bookingLine } from '@/domain/bookings';
@@ -192,171 +192,184 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
         onOpenImage={heroIsGoogle ? undefined : (i) => setViewing({ uris: heroPhotos.map((p) => resolvePhoto(p.uri)), start: i })}
       />
 
-      {booking && (
-        <Card>
-          <Txt kind="heading">{t('booking.info')}</Txt>
-          {bookingLine(booking, stop.name) !== '' && <Txt>{bookingLine(booking, stop.name)}</Txt>}
-          {booking.kind !== 'lodging' && booking.from && booking.to && (
-            <Txt kind="soft">{`${booking.from.name} ${booking.departTime ?? ''} → ${booking.to.name} ${booking.arriveTime ?? ''}`}</Txt>
-          )}
-          {booking.kind === 'lodging' && booking.price !== undefined && <Txt kind="soft">{`${t('booking.price')} ${formatMoney(booking.price, booking.priceCurrency ?? trip.baseCurrency)}`}</Txt>}
-          {booking.memo ? <Txt kind="soft">{booking.memo}</Txt> : null}
-          <SeatMap booking={booking} />
-          {onEditBooking && <Button kind="ghost" label={t('booking.edit')} onPress={() => onEditBooking(booking.id)} />}
-        </Card>
-      )}
-
-      {stop.skipped && (
-        <Card style={{ borderColor: colors.inkSoft }}>
-          <Txt>{t('stop.hiddenBanner')}</Txt>
-          <Row>
-            <Button
-              label={t('stop.unhide')}
-              onPress={async () => {
-                await setSkipped(sv, stop, false);
-                reload();
-              }}
-            />
-            <Button kind="danger" label={t('common.delete')} onPress={() => askSkip(stop)} />
-          </Row>
-        </Card>
-      )}
-
-      {!visited && !stop.skipped && question === 'arrival' && (
-        <Card style={styles.ask}>
-          <Txt kind="heading">{t('prompt.arrivalTitle', { name: stop.name })}</Txt>
-          <Button label={t('prompt.arrived')} onPress={() => void arrive()} />
-          <Button kind="ghost" label={t('prompt.onTheWay')} onPress={() => setQuestion(null)} />
-        </Card>
-      )}
-
-      {!visited && !stop.skipped && question === 'overdue' && (
-        <Card style={styles.ask}>
-          <Txt kind="heading">{t('prompt.overdueTitle', { name: stop.name })}</Txt>
-          <Txt kind="soft">{t('prompt.overdueBody')}</Txt>
-          <Button label={t('prompt.reschedule')} onPress={() => setQuestion('reschedule')} />
-          <Button kind="ghost" label={t('prompt.onTheWayShort')} onPress={() => setQuestion(null)} />
-          <Button kind="ghost" label={t('prompt.skip')} onPress={() => setQuestion('skip')} />
-        </Card>
-      )}
-
-      {!stop.skipped && question === 'reschedule' && (
-        <Card style={styles.ask}>
-          <Txt kind="heading">{t('prompt.rescheduleTitle')}</Txt>
-          <Txt kind="soft">{t('prompt.rescheduleHint')}</Txt>
-          <TimeField label={t('stop.plannedTime')} value={stop.plannedTime ?? ''} onChange={(v) => void savePlanned(v)} />
-          {days.length > 1 && (
-            <DateField
-              label={t('stop.otherDay')}
-              value={day.date}
-              min={days[0].date}
-              max={days[days.length - 1].date}
-              onChange={async (date) => {
-                const target = days.find((d) => d.date === date);
-                if (target) await moveStop(sv, stop, target);
-                reload();
-              }}
-            />
-          )}
-          <Button label={t('common.ok')} onPress={() => setQuestion(null)} />
-        </Card>
-      )}
-
-      <Card>
-        <Txt kind="heading">{t('stop.plan')}</Txt>
-        <TimeField label={t('stop.plannedTime')} value={stop.plannedTime ?? ''} onChange={(v) => void savePlanned(v)} />
-        <Checklist items={planItems ?? parseChecklist(stop.planNote)} onChange={changePlan} editable placeholder={t('stop.planNote')} />
-      </Card>
-
-      {!visited && !stop.skipped && (
-        <Card>
-          <Txt kind="soft">{t('stop.notVisited')}</Txt>
-          <Button kind="ghost" label={arrivedLabel} onPress={() => void arrive()} />
-        </Card>
-      )}
-
-      {visited && (
-        <>
+      {/* 사진 위로 올라오는 그라데이션 시트. 안의 카드는 반투명 흰 면 */}
+      <View style={styles.sheet}>
+        {booking && (
           <Card>
-            <Txt kind="heading">{t('stop.myRecord')}</Txt>
-            {stop.arrivedAt && (
-              <Row>
-                <Stamp arrivedAt={stop.arrivedAt} />
-                <View style={{ flex: 1, gap: space.sm }}>
-                  <Txt kind="soft">{t('stop.arrivedAt', { time: formatTime(stop.arrivedAt) })}</Txt>
-                  <TimeField label={t('stop.editArrival')} value={formatTime(stop.arrivedAt)} onChange={(v) => void saveArrivalTime(v)} />
-                </View>
-              </Row>
+            <Txt kind="heading">{t('booking.info')}</Txt>
+            {bookingLine(booking, stop.name) !== '' && <Txt>{bookingLine(booking, stop.name)}</Txt>}
+            {booking.kind !== 'lodging' && booking.from && booking.to && (
+              <Txt kind="soft">{`${booking.from.name} ${booking.departTime ?? ''} → ${booking.to.name} ${booking.arriveTime ?? ''}`}</Txt>
             )}
-            <Field
-              placeholder={t('stop.memoPlaceholder')}
-              value={memo ?? stop.memo}
-              onChangeText={setMemo}
-              onBlur={() => void saveMemo()}
-              multiline
-            />
+            {booking.kind === 'lodging' && booking.price !== undefined && <Txt kind="soft">{`${t('booking.price')} ${formatMoney(booking.price, booking.priceCurrency ?? trip.baseCurrency)}`}</Txt>}
+            {booking.memo ? <Txt kind="soft">{booking.memo}</Txt> : null}
+            <SeatMap booking={booking} />
+            {onEditBooking && <Button kind="ghost" label={t('booking.edit')} onPress={() => onEditBooking(booking.id)} />}
           </Card>
+        )}
 
-          <Card>
-            <Txt kind="heading">{t('stop.photos')}</Txt>
-            {photos.length > 0 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm, paddingTop: 6, paddingRight: 6 }}>
-                {photos.map((p, i) => (
-                  <View key={p.id} style={styles.thumbBox}>
-                    <Pressable accessibilityRole="imagebutton" accessibilityLabel={t('diary.photoOpen')} onPress={() => setViewing({ uris: photos.map((x) => resolvePhoto(x.uri)), start: i })}>
-                      {/* 목록은 작은 그림으로 빨리, 누르면 원본을 크게 */}
-                      <Image source={{ uri: resolvePhoto(thumbOf(p.uri)) }} style={styles.thumb} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} accessibilityIgnoresInvertColors />
-                      {isVideo(p.uri) && <Text style={styles.play}>▶</Text>}
-                    </Pressable>
-                    <Pressable accessibilityRole="button" accessibilityLabel={p.cover ? t('stop.coverOn') : t('stop.cover')} accessibilityState={{ selected: !!p.cover }} onPress={() => void toggleCover(p)} hitSlop={6} style={[styles.cover, p.cover && styles.coverOn]}>
-                      <Text style={[styles.coverText, p.cover && { color: '#fff' }]}>{p.cover ? t('stop.coverOn') : t('stop.cover')}</Text>
-                    </Pressable>
-                    <Pressable accessibilityRole="button" accessibilityLabel={`${t('stop.photo')} ${t('common.delete')}`} onPress={() => void removePhoto(p)} hitSlop={8} style={styles.remove}>
-                      <Text style={styles.removeText}>✕</Text>
-                    </Pressable>
-                  </View>
-                ))}
-              </ScrollView>
-            )}
-            {onFindNearby && <Button label={t('stop.fromNearby')} onPress={onFindNearby} />}
+        {stop.skipped && (
+          <Card style={{ borderColor: colors.inkSoft }}>
+            <Txt>{t('stop.hiddenBanner')}</Txt>
             <Row>
-              <Button kind="ghost" label={t('stop.addPhoto')} onPress={() => void addPhoto('library')} />
-              <Button kind="ghost" label={t('stop.takePhoto')} onPress={() => void addPhoto('camera')} />
+              <Button
+                label={t('stop.unhide')}
+                onPress={async () => {
+                  await setSkipped(sv, stop, false);
+                  reload();
+                }}
+              />
+              <Button kind="danger" label={t('common.delete')} onPress={() => askSkip(stop)} />
             </Row>
           </Card>
-        </>
-      )}
+        )}
 
-      <Card>
-        <Txt kind="heading">{t('stop.expenses')}</Txt>
-        {expenses.map((e) => (
-          <Row key={e.id}>
-            <Txt style={{ flex: 1 }}>
-              {t(`cat.${e.category}`)}
-              {e.memo ? ` · ${e.memo}` : ''}
-            </Txt>
-            <Txt>{formatMoney(e.amount, e.currency)}</Txt>
-            <Chip
-              label={t('common.delete')}
-              onPress={async () => {
-                await repo.deleteExpense(e.id);
-                reload();
-              }}
-            />
-          </Row>
-        ))}
-        <Txt kind="soft">{t('stop.subtotal', { amount: formatMoney(subtotal, trip.baseCurrency) })}</Txt>
-        {unconverted !== '' && <Txt kind="soft">{`${t('expense.unconverted')}: ${unconverted}`}</Txt>}
-        <ExpenseForm
-          defaultCurrency={defaultCurrencyOf(trip, localToday())}
-          currencies={currencyChoices(trip)}
-          people={peopleOf(trip)}
-          onAdd={async (e) => {
-            await addExpense(sv, trip, { ...e, date: day.date, stopId });
-            reload();
-          }}
-        />
-      </Card>
+        {!visited && !stop.skipped && question === 'arrival' && (
+          <Card style={styles.ask}>
+            <Txt kind="heading">{t('prompt.arrivalTitle', { name: stop.name })}</Txt>
+            <Button label={t('prompt.arrived')} onPress={() => void arrive()} />
+            <Button kind="ghost" label={t('prompt.onTheWay')} onPress={() => setQuestion(null)} />
+          </Card>
+        )}
+
+        {!visited && !stop.skipped && question === 'overdue' && (
+          <Card style={styles.ask}>
+            <Txt kind="heading">{t('prompt.overdueTitle', { name: stop.name })}</Txt>
+            <Txt kind="soft">{t('prompt.overdueBody')}</Txt>
+            <Button label={t('prompt.reschedule')} onPress={() => setQuestion('reschedule')} />
+            <Button kind="ghost" label={t('prompt.onTheWayShort')} onPress={() => setQuestion(null)} />
+            <Button kind="ghost" label={t('prompt.skip')} onPress={() => setQuestion('skip')} />
+          </Card>
+        )}
+
+        {!stop.skipped && question === 'reschedule' && (
+          <Card style={styles.ask}>
+            <Txt kind="heading">{t('prompt.rescheduleTitle')}</Txt>
+            <Txt kind="soft">{t('prompt.rescheduleHint')}</Txt>
+            <TimeField label={t('stop.plannedTime')} value={stop.plannedTime ?? ''} onChange={(v) => void savePlanned(v)} />
+            {days.length > 1 && (
+              <DateField
+                label={t('stop.otherDay')}
+                value={day.date}
+                min={days[0].date}
+                max={days[days.length - 1].date}
+                onChange={async (date) => {
+                  const target = days.find((d) => d.date === date);
+                  if (target) await moveStop(sv, stop, target);
+                  reload();
+                }}
+              />
+            )}
+            <Button label={t('common.ok')} onPress={() => setQuestion(null)} />
+          </Card>
+        )}
+
+        <Card>
+          <Txt kind="heading">{t('stop.plan')}</Txt>
+          <TimeField label={t('stop.plannedTime')} value={stop.plannedTime ?? ''} onChange={(v) => void savePlanned(v)} />
+          <Checklist items={planItems ?? parseChecklist(stop.planNote)} onChange={changePlan} editable placeholder={t('stop.planNote')} />
+        </Card>
+
+        {!visited && !stop.skipped && (
+          <Card>
+            <Txt kind="soft">{t('stop.notVisited')}</Txt>
+            <Button kind="ghost" label={arrivedLabel} onPress={() => void arrive()} />
+          </Card>
+        )}
+
+        {visited && (
+          <>
+            <Card>
+              <Txt kind="heading">{t('stop.myRecord')}</Txt>
+              {stop.arrivedAt && (
+                <Row>
+                  <Stamp arrivedAt={stop.arrivedAt} />
+                  <View style={{ flex: 1, gap: space.sm }}>
+                    <Txt kind="soft">{t('stop.arrivedAt', { time: formatTime(stop.arrivedAt) })}</Txt>
+                    <TimeField label={t('stop.editArrival')} value={formatTime(stop.arrivedAt)} onChange={(v) => void saveArrivalTime(v)} />
+                  </View>
+                </Row>
+              )}
+              <Field
+                placeholder={t('stop.memoPlaceholder')}
+                value={memo ?? stop.memo}
+                onChangeText={setMemo}
+                onBlur={() => void saveMemo()}
+                multiline
+              />
+            </Card>
+
+            <Card>
+              <Txt kind="heading">{t('stop.photos')}</Txt>
+              {photos.length > 0 && (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm, paddingTop: 6, paddingRight: 6 }}>
+                  {photos.map((p, i) => (
+                    <View key={p.id} style={styles.thumbBox}>
+                      <Pressable accessibilityRole="imagebutton" accessibilityLabel={t('diary.photoOpen')} onPress={() => setViewing({ uris: photos.map((x) => resolvePhoto(x.uri)), start: i })}>
+                        {/* 목록은 작은 그림으로 빨리, 누르면 원본을 크게 */}
+                        <Image source={{ uri: resolvePhoto(thumbOf(p.uri)) }} style={styles.thumb} contentFit="cover" cachePolicy="memory-disk" recyclingKey={p.id} accessibilityIgnoresInvertColors />
+                        {isVideo(p.uri) && <Text style={styles.play}>▶</Text>}
+                      </Pressable>
+                      <Pressable accessibilityRole="button" accessibilityLabel={p.cover ? t('stop.coverOn') : t('stop.cover')} accessibilityState={{ selected: !!p.cover }} onPress={() => void toggleCover(p)} hitSlop={6} style={[styles.cover, p.cover && styles.coverOn]}>
+                        <Text style={[styles.coverText, p.cover && { color: '#fff' }]}>{p.cover ? t('stop.coverOn') : t('stop.cover')}</Text>
+                      </Pressable>
+                      <Pressable accessibilityRole="button" accessibilityLabel={`${t('stop.photo')} ${t('common.delete')}`} onPress={() => void removePhoto(p)} hitSlop={8} style={styles.remove}>
+                        <Text style={styles.removeText}>✕</Text>
+                      </Pressable>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+              {onFindNearby && <Button label={t('stop.fromNearby')} onPress={onFindNearby} />}
+              <Row>
+                <Button kind="ghost" label={t('stop.addPhoto')} onPress={() => void addPhoto('library')} />
+                <Button kind="ghost" label={t('stop.takePhoto')} onPress={() => void addPhoto('camera')} />
+              </Row>
+              {photos.length === 0 && (
+                // 아직 사진이 없으면 빈 자리 세 칸. 누르면 사진첩에서 고른다 (읽어 주기는 위 버튼이 맡는다).
+                <Row>
+                  {[0, 1, 2].map((i) => (
+                    <Pressable key={i} accessible={false} onPress={() => void addPhoto('library')} style={styles.slot}>
+                      <Image source={PHOTO_ICON} style={styles.slotIcon} contentFit="contain" />
+                    </Pressable>
+                  ))}
+                </Row>
+              )}
+            </Card>
+          </>
+        )}
+
+        <Card>
+          <Txt kind="heading">{t('stop.expenses')}</Txt>
+          {expenses.map((e) => (
+            <Row key={e.id}>
+              <Txt style={{ flex: 1 }}>
+                {t(`cat.${e.category}`)}
+                {e.memo ? ` · ${e.memo}` : ''}
+              </Txt>
+              <Txt>{formatMoney(e.amount, e.currency)}</Txt>
+              <Chip
+                label={t('common.delete')}
+                onPress={async () => {
+                  await repo.deleteExpense(e.id);
+                  reload();
+                }}
+              />
+            </Row>
+          ))}
+          <Txt kind="soft">{t('stop.subtotal', { amount: formatMoney(subtotal, trip.baseCurrency) })}</Txt>
+          {unconverted !== '' && <Txt kind="soft">{`${t('expense.unconverted')}: ${unconverted}`}</Txt>}
+          <ExpenseForm
+            defaultCurrency={defaultCurrencyOf(trip, localToday())}
+            currencies={currencyChoices(trip)}
+            people={peopleOf(trip)}
+            onAdd={async (e) => {
+              await addExpense(sv, trip, { ...e, date: day.date, stopId });
+              reload();
+            }}
+          />
+        </Card>
+      </View>
 
       {viewing && <PhotoViewer uris={viewing.uris} start={viewing.start} onClose={() => setViewing(null)} />}
     </Screen>
@@ -364,8 +377,25 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
 }
 
 const THUMB = 120;
+const PHOTO_ICON = require('../../assets/icons/photo.svg');
 
 const styles = StyleSheet.create({
+  // Screen 의 가장자리 여백을 지우고 사진 아래쪽을 덮는다 (사이 간격 space.md 까지 당긴다)
+  sheet: {
+    marginHorizontal: -space.lg,
+    marginTop: -(HERO_OVERLAP + space.md),
+    marginBottom: -space.lg,
+    padding: space.md,
+    paddingBottom: space.xxl * 2,
+    gap: space.md,
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
+    overflow: 'hidden',
+    backgroundColor: colors.paper,
+    experimental_backgroundImage: gradients.backdrop,
+  },
+  slot: { flex: 1, height: 100, borderRadius: radius.md, backgroundColor: colors.well, alignItems: 'center', justifyContent: 'center' },
+  slotIcon: { width: 22, height: 22 },
   ask: { borderColor: colors.accent, borderWidth: 2, gap: space.sm },
   thumbBox: { width: THUMB, height: THUMB },
   thumb: { width: THUMB, height: THUMB, borderRadius: radius.md, backgroundColor: colors.accentSoft },

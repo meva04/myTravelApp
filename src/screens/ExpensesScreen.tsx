@@ -161,7 +161,7 @@ export function ExpensesScreen({ tripId, onEditRates, refreshKey = 0, today }: {
       <Card>
         <Txt kind="heading">{t('expense.byDate')}</Txt>
         {[...new Set(expenses.map((e) => e.date))].sort().map((d) => (
-          <Card key={d}>
+          <Card key={d} tone="well">
             <Row>
               <Txt kind="heading" style={{ flex: 1 }}>
                 {d}

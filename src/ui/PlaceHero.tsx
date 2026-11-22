@@ -20,7 +20,15 @@ type Props = {
   onOpenImage?: (index: number) => void;
 };
 
-const HEIGHT = 300;
+const HEIGHT = 330;
+/**
+ * 아래 내용 시트가 사진 위로 올라와 덮는 만큼 (StopScreen 의 시트와 같은 값).
+ * 시트 모서리(radius.sheet 28)보다 넉넉히 커야 둥근 모서리 틈으로 사진 끝이 보이지 않는다.
+ */
+export const HERO_OVERLAP = 44;
+/** 위 막대(뒤로 버튼 줄) 높이. 구글 지도 단추를 뒤로 버튼과 같은 줄에 둔다. */
+const BAR = 44;
+const CHIP = 36;
 
 export function PlaceHero({ images, name, address, credit, onOpenGoogle, onOpenImage }: Props) {
   const { width } = useWindowDimensions();
@@ -47,7 +55,7 @@ export function PlaceHero({ images, name, address, credit, onOpenGoogle, onOpenI
       )}
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, has ? styles.shade : styles.plain]} />
       {onOpenGoogle && (
-        <Pressable accessibilityRole="button" onPress={onOpenGoogle} hitSlop={8} style={[styles.google, { top: top + space.md }]}>
+        <Pressable accessibilityRole="button" onPress={onOpenGoogle} hitSlop={8} style={[styles.google, { top: top + (BAR - CHIP) / 2 }]}>
           <Text style={styles.googleText}>{t('hero.openGoogle')}</Text>
         </Pressable>
       )}
@@ -73,22 +81,24 @@ export function PlaceHero({ images, name, address, credit, onOpenGoogle, onOpenI
 
 const styles = StyleSheet.create({
   hero: { marginHorizontal: -space.lg, marginTop: -space.lg, justifyContent: 'flex-end', overflow: 'hidden', backgroundColor: colors.accentSoft },
-  shade: { backgroundColor: 'rgba(0,0,0,0.3)' },
+  // 아래로 갈수록 어두워져 흰 이름이 읽힌다
+  shade: { experimental_backgroundImage: 'linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.55) 100%)' },
   plain: { backgroundColor: colors.accentSoft },
-  text: { padding: space.lg, gap: 2 },
-  name: { fontSize: fonts.size.xl, fontWeight: '700', color: '#fff' },
-  address: { fontSize: fonts.size.xs, color: 'rgba(255,255,255,0.85)', marginTop: space.xs },
+  text: { paddingHorizontal: space.lg, paddingBottom: HERO_OVERLAP + space.lg, gap: space.xs },
+  name: { fontSize: fonts.size.xl, lineHeight: 35, fontWeight: '700', color: '#fff', letterSpacing: -0.5 },
+  address: { fontSize: fonts.size.xs, lineHeight: 17, color: '#fff' },
   credit: { fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: space.xs },
   google: {
     position: 'absolute',
     right: space.md,
-    paddingVertical: space.xs + 2,
-    paddingHorizontal: space.md,
+    height: CHIP,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
     borderRadius: radius.pill,
-    backgroundColor: 'rgba(255,255,255,0.92)',
+    backgroundColor: colors.well,
   },
-  googleText: { fontSize: fonts.size.xs, fontWeight: '700', color: colors.ink },
-  dots: { position: 'absolute', bottom: space.md, right: space.lg, flexDirection: 'row', gap: 4 },
+  googleText: { fontSize: fonts.size.sm, fontWeight: '500', color: colors.ink },
+  dots: { position: 'absolute', bottom: HERO_OVERLAP + space.md, right: space.lg, flexDirection: 'row', gap: 4 },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.5)' },
   dotOn: { backgroundColor: '#fff' },
 });

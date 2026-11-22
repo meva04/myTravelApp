@@ -51,10 +51,15 @@ export function Field(props: TextInputProps) {
   return <TextInput placeholderTextColor={colors.inkSoft} {...props} style={[styles.field, props.style]} />;
 }
 
-export function Card({ children, onPress, style }: { children: ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle> }) {
-  if (!onPress) return <View style={[styles.card, style]}>{children}</View>;
+/**
+ * 카드. glass: 그라데이션 바탕 위의 반투명 흰 면 (기본).
+ * well: 흰 면이나 다른 카드 안에 놓이는 회색 칸 (카드 안의 카드, 흰 시트 안의 카드).
+ */
+export function Card({ children, onPress, style, tone = 'glass' }: { children: ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle>; tone?: 'glass' | 'well' }) {
+  const look = tone === 'well' ? styles.cardWell : styles.card;
+  if (!onPress) return <View style={[look, style]}>{children}</View>;
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.card, pressed && styles.pressed, style]}>
+    <Pressable onPress={onPress} style={({ pressed }) => [look, pressed && styles.pressed, style]}>
       {children}
     </Pressable>
   );
@@ -75,7 +80,7 @@ const styles = StyleSheet.create({
   // 펼친 폴더블처럼 넓은 화면에서도 읽기 좋은 폭을 넘지 않게 가운데 둔다
   screenContent: { padding: space.lg, gap: space.md, width: '100%', maxWidth: 640, alignSelf: 'center' },
   title: { fontSize: fonts.size.xl, color: colors.ink, fontWeight: '700', letterSpacing: -0.5 },
-  heading: { fontSize: fonts.size.lg, color: colors.ink, fontWeight: '600', letterSpacing: -0.3 },
+  heading: { fontSize: fonts.size.lg, lineHeight: 26, color: colors.ink, fontWeight: '700', letterSpacing: -0.3 },
   body: { fontSize: fonts.size.md, color: colors.ink },
   soft: { fontSize: fonts.size.sm, color: colors.inkSoft },
   small: { fontSize: fonts.size.xs, color: colors.ink },
@@ -86,7 +91,8 @@ const styles = StyleSheet.create({
   btnText: { color: colors.card, fontSize: fonts.size.md, fontWeight: '600' },
   pressed: { opacity: 0.6 },
   field: { borderRadius: radius.md, backgroundColor: colors.well, paddingVertical: space.md + 2, paddingHorizontal: space.lg, fontSize: fonts.size.md, color: colors.ink },
-  card: { backgroundColor: colors.card, borderRadius: radius.lg, padding: space.lg, gap: space.xs, shadowColor: '#6E6AF0', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } },
+  card: { backgroundColor: colors.glass, borderRadius: radius.lg, padding: space.lg, gap: space.sm },
+  cardWell: { backgroundColor: colors.well, borderRadius: radius.md, padding: space.md, gap: space.xs },
   chip: { paddingVertical: space.sm + 1, paddingHorizontal: space.md + 2, borderRadius: radius.pill, backgroundColor: colors.well },
   chipOn: { backgroundColor: colors.brand, experimental_backgroundImage: gradients.brand },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.sm },

@@ -88,7 +88,7 @@ export function NewTripScreen({ onDone }: { onDone: (tripId: string) => void }) 
         <Txt kind="heading">{t('trip.bookings')}</Txt>
         <Txt kind="soft">{t('trip.bookingsHint')}</Txt>
         {bookings.map((b) => (
-          <Card key={b.id} onPress={() => setEditing(b)}>
+          <Card key={b.id} tone="well" onPress={() => setEditing(b)}>
             <Txt>{bookingSummary(b)}</Txt>
           </Card>
         ))}

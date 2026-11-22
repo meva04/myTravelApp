@@ -50,7 +50,7 @@ export function BookingsScreen({ tripId, initialKind, editId }: { tripId: string
         <Txt kind="heading">{t('booking.lodging')}</Txt>
         {lodging.length === 0 && <Txt kind="soft">{t('booking.none')}</Txt>}
         {lodging.map((b) => (
-          <Card key={b.id} onPress={() => setEditing({ b, isNew: false })}>
+          <Card key={b.id} tone="well" onPress={() => setEditing({ b, isNew: false })}>
             <Txt>{bookingSummary(b)}</Txt>
           </Card>
         ))}
@@ -60,7 +60,7 @@ export function BookingsScreen({ tripId, initialKind, editId }: { tripId: string
         <Txt kind="heading">{t('booking.transport')}</Txt>
         {transport.length === 0 && <Txt kind="soft">{t('booking.none')}</Txt>}
         {transport.map((b) => (
-          <Card key={b.id} onPress={() => setEditing({ b, isNew: false })}>
+          <Card key={b.id} tone="well" onPress={() => setEditing({ b, isNew: false })}>
             <Txt>{bookingSummary(b)}</Txt>
             {b.gate ? <Txt kind="soft">{`${t('booking.gate')} ${b.gate}`}</Txt> : null}
             {(b.seat || b.vehicle) && <SeatMap booking={b} />}

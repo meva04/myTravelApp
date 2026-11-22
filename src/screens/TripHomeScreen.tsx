@@ -28,6 +28,7 @@ import { formatAmounts, formatDistance, formatKm, formatTime } from '@/ui/format
 import { Card, Chip, Row, Txt } from '@/ui/kit';
 import { PlaceThumb } from '@/ui/PlaceVisual';
 import { SwipeRow } from '@/ui/SwipeRow';
+import { SwipeToggle } from '@/ui/SwipeToggle';
 
 import { DiaryDay, type DiaryEntry } from './DiaryDay';
 
@@ -502,6 +503,24 @@ export function TripHomeScreen({
       )}
     </>
   );
+  const switchView = (next: 'plan' | 'diary') => {
+    if (!day) return;
+    setViewOf({ ...viewOf, [day.id]: next });
+    // 일기는 누르면 화면 가득 펼쳐 읽고, 계획으로 돌아오면 지도와 반반
+    sheet.current?.snapToIndex(next === 'diary' ? 2 : 1);
+  };
+  // 계획 | 일기 토글: 계획에서는 지난 날이면 장소 목록 맨 위(먼저 볼 것), 아니면 맨 아래. 일기에서는 맨 위.
+  const viewToggle = (where: 'top' | 'bottom') => (
+    <SwipeToggle
+      options={[
+        { value: 'plan', label: t('day.plan'), accessibilityLabel: t('day.planView') },
+        { value: 'diary', label: t('day.diary'), accessibilityLabel: t('day.diaryView') },
+      ]}
+      value={view}
+      onChange={switchView}
+      style={where === 'top' ? styles.diaryTop : styles.diaryBottom}
+    />
+  );
   // 날짜 탭과 그날 요약은 스크롤하지 않고 위에 고정한다
   const header = (
     <View style={styles.header}>
@@ -512,23 +531,13 @@ export function TripHomeScreen({
             <DayTile key={d.id} date={d.date} n={i + 1} selected={d.id === dayId} onPress={() => changeDay(d.id)} />
           ))}
         </ScrollView>
-        {day && (
-          <Chip
-            label={view === 'diary' ? t('day.planView') : t('day.diaryView')}
-            onPress={() => {
-              const next = view === 'diary' ? 'plan' : 'diary';
-              setViewOf({ ...viewOf, [day.id]: next });
-              // 일기는 누르면 화면 가득 펼쳐 읽고, 계획으로 돌아오면 지도와 반반
-              sheet.current?.snapToIndex(next === 'diary' ? 2 : 1);
-            }}
-          />
-        )}
       </View>
       {day && view === 'plan' && unconverted !== '' && <Txt kind="soft" style={{ paddingHorizontal: space.lg }}>{`${t('expense.unconverted')}: ${unconverted}`}</Txt>}
     </View>
   );
   const panel = (
     <>
+      {day && view === 'diary' && viewToggle('top')}
       {day && view === 'diary' && (
         <DiaryDay
           date={day.date}
@@ -547,10 +556,12 @@ export function TripHomeScreen({
       {day && view === 'plan' && (
         <>
           {loaded && rows.length === 0 && (
-            <Card>
+            <Card tone="well">
               <Txt kind="soft">{t('day.empty')}</Txt>
             </Card>
           )}
+
+          {past && viewToggle('top')}
 
           {/* 길게 눌러 끌면 장소와 이동 메모의 순서를 함께 바꾼다. 왼쪽으로 밀면 삭제. */}
           <View style={styles.railShift} onLayout={(e) => (gridTop.current = e.nativeEvent.layout.y)}>
@@ -606,6 +617,7 @@ export function TripHomeScreen({
               />
             </View>
           )}
+          {!past && viewToggle('bottom')}
           {rows.length > 1 && <Txt kind="small">{t('day.dragHint')}</Txt>}
 
           {hidden.length > 0 && (
@@ -615,7 +627,7 @@ export function TripHomeScreen({
               </Pressable>
               {showHidden &&
                 hidden.map((s) => (
-                  <Card key={s.id} style={styles.hiddenCard} onPress={() => onOpenStop(s.id)}>
+                  <Card key={s.id} tone="well" style={styles.hiddenCard} onPress={() => onOpenStop(s.id)}>
                     <Row>
                       <Txt style={{ flex: 1, color: colors.inkSoft }}>{s.name}</Txt>
                       <Chip
@@ -741,7 +753,7 @@ function SheetGlass({ style }: BottomSheetBackgroundProps) {
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
-/** 날짜 탭: 날짜 숫자 위, 요일 아래. 고른 날만 차콜 캡슐에 점 하나. 화면 읽기에는 n일차로 읽힌다. */
+/** 날짜 탭: 날짜 숫자 위, 요일 아래. 고른 날만 흰 알약에 점 하나. 화면 읽기에는 n일차로 읽힌다. */
 function DayTile({ date, n, selected, onPress }: { date: string; n: number; selected: boolean; onPress: () => void }) {
   const [y, m, d] = date.split('-').map(Number);
   const weekday = WEEKDAYS[new Date(y, m - 1, d).getDay()];
@@ -1131,8 +1143,8 @@ const RAIL = 66;
 const RAIL_SHIFT = 16;
 /** 메모가 없을 때 구간 칸 높이 (줄 위 구간 버튼이 들어가는 높이) */
 /** 추가 모드에서 + 가 들어갈 만큼 벌어진 구간 높이 */
-const LEG_ADD = 84;
-const LEG_ADD_COMPACT = 52;
+const LEG_ADD = 60;
+const LEG_ADD_COMPACT = 44;
 /** 추가 모드가 아닐 때 장소 카드 사이 간격 (카드끼리 거의 붙는다) */
 const LEG_CLOSED = 16;
 /** 이동 구간 표시(아이콘·거리·시간) 높이. 카드 사이가 이보다 좁으면 경계 가운데에 걸쳐 그린다 */
@@ -1199,6 +1211,8 @@ const styles = StyleSheet.create({
   dayDot: { width: 5, height: 5, borderRadius: 3, marginTop: 2 },
   dayDotOn: { backgroundColor: colors.brand },
   row: { flexDirection: 'row', alignItems: 'stretch' },
+  diaryTop: { marginBottom: space.md },
+  diaryBottom: { marginTop: space.md },
   rail: { width: RAIL, alignItems: 'center', justifyContent: 'center' },
   railLine: {
     position: 'absolute',

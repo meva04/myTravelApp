@@ -422,9 +422,14 @@ test('a past day opens as a diary of visited places, and can be switched back to
   expect(await screen.findByTestId('diary')).toBeTruthy();
   expect(screen.getByText('햇살이 좋았다')).toBeTruthy();
   expect(screen.getByText('가지 못한 곳 · B')).toBeTruthy();
-  await fireEvent.press(screen.getByText('계획 보기'));
+  // 계획 | 일기 토글로 오간다
+  expect(screen.getByLabelText('일기 보기').props.accessibilityState).toEqual({ selected: true });
+  await fireEvent.press(screen.getByLabelText('계획 보기'));
   expect(screen.queryByTestId('diary')).toBeNull();
   expect(screen.getByText('B')).toBeTruthy();
+  expect(screen.getByLabelText('계획 보기').props.accessibilityState).toEqual({ selected: true });
+  await fireEvent.press(screen.getByLabelText('일기 보기'));
+  expect(await screen.findByTestId('diary')).toBeTruthy();
 });
 
 test('in the diary, a place without text invites you to write, and 편집 opens the place to edit text and photos', async () => {
