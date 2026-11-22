@@ -13,7 +13,9 @@ export default function RootLayout() {
             title: '',
             headerBackButtonDisplayMode: 'minimal',
             headerShadowVisible: false,
-            headerStyle: { backgroundColor: colors.paper },
+            // 위 막대를 투명하게 해 화면 바탕 그라데이션이 상태 표시줄까지 이어지게 한다 (내용은 Screen 이 막대 아래로 내린다)
+            headerTransparent: true,
+            headerStyle: { backgroundColor: 'transparent' },
             headerTintColor: colors.ink,
             contentStyle: { backgroundColor: colors.paper },
           }}

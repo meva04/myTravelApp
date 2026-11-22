@@ -117,5 +117,17 @@ export function roundCorners(line: LatLng[], rounds = 2): LatLng[] {
   return out;
 }
 
+/**
+ * 지금 확대 수준에서 걷어 낼 꺾임의 크기 (미터). 화면에서 약 3pt 안쪽의 흔들림은 펴서 보기 좋게 그린다.
+ * 확대하면 몇 미터라 실제 길 그대로, 축소하면 수십~수백 미터라 매끈한 선이 된다.
+ * 지도를 조금 움직일 때마다 다시 계산하지 않도록 2배 단위로 끊는다.
+ */
+export function smoothTolerance(latDelta: number): number {
+  if (!(latDelta > 0)) return 6;
+  const step = Math.pow(2, Math.round(Math.log2(latDelta)));
+  const metersPerPt = (step * M_PER_DEG) / 800;
+  return Math.max(4, metersPerPt * 3);
+}
+
 /** 지도에 그릴 경로: 잔 꺾임을 걷어 내고 모서리를 둥글게 */
-export const smoothLine = (line: LatLng[]): LatLng[] => roundCorners(simplifyLine(line));
+export const smoothLine = (line: LatLng[], tol = 6): LatLng[] => roundCorners(simplifyLine(line, tol), 3);

@@ -1,4 +1,4 @@
-import { drawnLines, easeOut, roundCorners, simplifyLine } from './drawRoute';
+import { drawnLines, easeOut, roundCorners, simplifyLine, smoothTolerance } from './drawRoute';
 
 const a = [
   { lat: 0, lng: 0 },
@@ -57,4 +57,15 @@ test('rounding keeps both ends on the places and softens the corner', () => {
   expect(r[0]).toEqual(line[0]);
   expect(r[r.length - 1]).toEqual(line[2]);
   expect(r).not.toContainEqual(line[1]);
+});
+
+test('smoothing follows the road when zoomed in and gets looser when zoomed out', () => {
+  const street = smoothTolerance(0.005); // 골목이 보이는 확대
+  const city = smoothTolerance(0.08); // 도시 전체
+  const country = smoothTolerance(3); // 나라 사이 이동
+  expect(street).toBeLessThanOrEqual(5);
+  expect(city).toBeGreaterThan(street);
+  expect(country).toBeGreaterThan(city * 10);
+  // 조금 움직인 정도로는 같은 값 (다시 계산하지 않는다)
+  expect(smoothTolerance(0.07)).toBe(smoothTolerance(0.08));
 });

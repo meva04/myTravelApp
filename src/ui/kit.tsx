@@ -1,15 +1,26 @@
 // 기본 부품. 색·간격은 모두 tokens 에서 가져온다.
-import type { ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, View, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native';
+import { useContext, type ReactNode } from 'react';
+import { Platform, Pressable, ScrollView, StyleSheet, View, type StyleProp, type TextInputProps, type TextStyle, type ViewStyle } from 'react-native';
+
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
 import { colors, fonts, glow, gradients, radius, space } from '@/theme/tokens';
 import { Backdrop } from '@/ui/Backdrop';
 import { Text, TextInput } from '@/ui/Text';
 
-export function Screen({ children, scroll = true }: { children: ReactNode; scroll?: boolean }) {
+/** 투명한 위 막대(뒤로 버튼 줄) 높이 */
+const BAR = Platform.OS === 'ios' ? 44 : 56;
+
+/**
+ * 기본 화면. 그라데이션 바탕이 투명한 위 막대 뒤 상태 표시줄까지 이어지고, 내용은 막대 아래에서 시작한다.
+ * underHeader: 사진처럼 막대 뒤까지 깔리는 화면이면 true (내리지 않는다).
+ */
+export function Screen({ children, scroll = true, underHeader = false }: { children: ReactNode; scroll?: boolean; underHeader?: boolean }) {
+  const insets = useContext(SafeAreaInsetsContext);
+  const top = underHeader ? 0 : (insets?.top ?? 0) + BAR;
   if (!scroll)
     return (
-      <View style={styles.screen}>
+      <View style={[styles.screen, { paddingTop: top }]}>
         <Backdrop />
         {children}
       </View>
@@ -17,7 +28,7 @@ export function Screen({ children, scroll = true }: { children: ReactNode; scrol
   return (
     <View style={styles.screen}>
       <Backdrop />
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.screenContent} keyboardShouldPersistTaps="handled">
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={[styles.screenContent, { paddingTop: top + space.lg }]} keyboardShouldPersistTaps="handled">
         {children}
       </ScrollView>
     </View>

@@ -117,7 +117,7 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
     ]);
   }
 
-  if (!data) return <Screen>{null}</Screen>;
+  if (!data) return <Screen underHeader>{null}</Screen>;
   const { stop, day, trip, expenses, days, photos, booking } = data;
   // 도착 기록이 없어도 사진·글이 이미 있으면 (일기에서 편집하러 온 경우) 기록 칸을 보여 준다
   const visited = stop.arrivedAt !== null || photos.length > 0 || stop.memo !== '';
@@ -181,7 +181,7 @@ export function StopScreen({ stopId, pickPhoto, resolvePhoto, openUrl, now = () 
   const unconverted = formatAmounts(summary.unconvertedByStop[stopId]);
 
   return (
-    <Screen>
+    <Screen underHeader>
       <PlaceHero
         images={hero.images}
         name={stop.name}

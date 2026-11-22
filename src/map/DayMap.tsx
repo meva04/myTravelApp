@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, StyleSheet, View } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 
@@ -8,7 +8,7 @@ import { askWhenInUse } from '@/location/permissions';
 import { colors, fonts, radius, stopColor } from '@/theme/tokens';
 import { Text } from '@/ui/Text';
 
-import { drawnLines, easeOut, smoothLine } from './drawRoute';
+import { drawnLines, easeOut, smoothLine, smoothTolerance } from './drawRoute';
 import { selectedOption } from './legRoutes';
 import mapStyle from './mapStyle.json';
 import { groupPins, pinLabel, type Selection } from './points';
@@ -55,6 +55,8 @@ export const DayMap = forwardRef<DayMapHandle, Props>(function DayMap({ initialP
 
   // 그날 경로를 처음 받으면 한 번, 경로 선이 하루 순서대로 빠르게 이어 그려진다 (날을 바꾸면 이 지도가 새로 그려져 다시 한다).
   const [progress, setProgress] = useState(0);
+  // 확대 수준에 맞춘 경로 다듬기 정도 (미터)
+  const [tol, setTol] = useState(() => smoothTolerance(initial?.latDelta ?? 0));
   const drawn = useRef(false);
   const hasRoute = legs.some((l) => (selectedOption(l)?.polyline.length ?? 0) > 1);
   // 지도를 처음 열 때 위치 권한을 물어, 허락하면 현재 위치를 보여 준다
@@ -90,11 +92,15 @@ export const DayMap = forwardRef<DayMapHandle, Props>(function DayMap({ initialP
   // 하루 순서(앞 장소 순)대로 이어 보고, 지금 진행만큼 잘라 둔다
   const order = (l: Leg) => stops.findIndex((x) => x.id === l.fromStopId);
   const routed = legs.filter((l) => (selectedOption(l)?.polyline.length ?? 0) > 1).sort((x, y) => order(x) - order(y));
-  // 길찾기 경로는 잔 꺾임이 많아 삐죽해 보이므로, 걷어 내고 모서리를 둥글게 해서 그린다
-  const partial = drawnLines(
-    routed.map((l) => smoothLine(selectedOption(l)!.polyline)),
-    easeOut(progress),
+  // 길찾기 경로는 잔 꺾임이 많아 삐죽해 보이므로, 지금 확대 수준에서 안 보일 만큼의 꺾임은 걷어 내고 모서리를 둥글게 그린다.
+  // 확대하면 실제 길 그대로, 축소하면 매끈한 선.
+  const routeKey = routed.map((l) => `${l.id}:${selectedOption(l)!.id}`).join('|');
+  const smoothed = useMemo(
+    () => routed.map((l) => smoothLine(selectedOption(l)!.polyline, tol)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [routeKey, tol],
   );
+  const partial = drawnLines(smoothed, easeOut(progress));
   const shownLine = new Map(routed.map((l, i) => [l.id, partial[i]]));
 
   useImperativeHandle(ref, () => ({
@@ -123,6 +129,7 @@ export const DayMap = forwardRef<DayMapHandle, Props>(function DayMap({ initialP
       onRegionChangeComplete={(r, details) => {
         const region = { lat: r.latitude, lng: r.longitude, latDelta: r.latitudeDelta, lngDelta: r.longitudeDelta };
         current.current = region;
+        setTol(smoothTolerance(region.latDelta));
         if (details?.isGesture) hasView.current = true;
         onRegion(region);
         report(region);
@@ -150,8 +157,8 @@ export const DayMap = forwardRef<DayMapHandle, Props>(function DayMap({ initialP
             key={`${leg.id}:${option.id}`}
             coordinates={line.map((p) => ({ latitude: p.lat, longitude: p.lng }))}
             strokeColor={on ? colors.accent : colors.route}
-            // 두께는 늘 같게, 고른 구간은 색으로만 구분한다
-            strokeWidth={5}
+            // 얇게. 두께는 늘 같게, 고른 구간은 색으로만 구분한다
+            strokeWidth={3}
             lineCap="round"
             lineJoin="round"
             zIndex={on ? 2 : 1}

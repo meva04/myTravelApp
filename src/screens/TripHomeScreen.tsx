@@ -506,7 +506,8 @@ export function TripHomeScreen({
   const header = (
     <View style={styles.header}>
       <View style={styles.tabs} onLayout={(e) => setTabsH(Math.round(e.nativeEvent.layout.height))}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }} style={{ flex: 1 }}>
+        {/* 고른 날의 그림자가 잘리지 않게, 여백을 스크롤 안쪽에 둔다 (화면 끝까지 스크롤되고 그림자도 끊기지 않는다) */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsScroll} style={{ flex: 1 }}>
           {days.map((d, i) => (
             <DayTile key={d.id} date={d.date} n={i + 1} selected={d.id === dayId} onPress={() => changeDay(d.id)} />
           ))}
@@ -523,7 +524,7 @@ export function TripHomeScreen({
           />
         )}
       </View>
-      {day && view === 'plan' && <>{unconverted !== '' && <Txt kind="soft">{`${t('expense.unconverted')}: ${unconverted}`}</Txt>}</>}
+      {day && view === 'plan' && unconverted !== '' && <Txt kind="soft" style={{ paddingHorizontal: space.lg }}>{`${t('expense.unconverted')}: ${unconverted}`}</Txt>}
     </View>
   );
   const panel = (
@@ -1178,21 +1179,20 @@ const styles = StyleSheet.create({
     gap: space.md,
   },
   header: {
-    paddingHorizontal: space.lg,
-    paddingTop: space.xs,
-    paddingBottom: space.sm,
-    gap: space.sm,
+    gap: space.xs,
   },
-  tabs: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  tabs: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingRight: space.lg },
+  tabsScroll: { gap: space.sm, paddingHorizontal: space.lg, paddingTop: space.xs, paddingBottom: space.sm + 2 },
   dayTile: {
     width: 46,
-    paddingTop: space.md,
-    paddingBottom: space.sm,
+    paddingTop: space.sm,
+    paddingBottom: space.xs + 2,
     borderRadius: 23,
     alignItems: 'center',
     gap: 4,
   },
-  dayTileOn: { backgroundColor: colors.card, ...glow },
+  // 그림자를 작게 해 날짜 줄 안에서 끊기지 않게 한다
+  dayTileOn: { backgroundColor: colors.card, shadowColor: colors.brand, shadowOpacity: 0.2, shadowRadius: 5, shadowOffset: { width: 0, height: 1 } },
   dayNum: { fontSize: fonts.size.md, fontWeight: '600', color: colors.inkSoft },
   dayWeek: { fontSize: fonts.size.sm, color: colors.inkSoft },
   dayOn: { color: colors.brand },
